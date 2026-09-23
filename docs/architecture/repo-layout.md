@@ -22,6 +22,7 @@ aisis/
     calendar/                    # git submodule: HyperCalendarBot
     finance/                     # git submodule: ExpenseSyncBot
     vibeflow/                    # git submodule: VibeFlow
+    desktop/                     # git submodule: Open Remote Commander (alex-mextner/open-remote-commander)
   docs/
     specs/
     architecture/
@@ -43,7 +44,7 @@ Use the package manager/runtime required by each upstream project; do not rewrit
 
 Python remains acceptable for the existing Telegram-call bridge and specialized ML/media components.
 
-The future desktop binder target is Go.
+The desktop transport is already Go in Open Remote Commander (ORC, `alex-mextner/open-remote-commander`); remaining work is product integration, harness APIs, signed installers, and auto-update.
 
 ## Subrepo rules
 

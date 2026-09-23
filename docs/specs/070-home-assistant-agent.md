@@ -12,13 +12,16 @@ Provide AI-capable Home Assistant tools for compound, contextual, analytical, hi
 
 ## Connectivity
 
-Known, verified endpoints:
-- Tailnet: `http://home.tailbfe8ea.ts.net:8123`;
-- public HTTPS proxy: `https://spry-gazelle-4693.dataplicity.io/` (HTTP 200 verified from the development machine on 2026-09-23).
+Home Assistant endpoints are deployment configuration, never repository constants.
 
-The adapter supports both. Tailnet/local transport is preferred for private/high-trust access; HTTPS is useful for server deployments that cannot join the Tailnet.
+Supported transport profiles are:
 
-Secrets are never stored in the public repository.
+- `tailnet`: a private HTTP/HTTPS endpoint reachable from the paired ORC device or trusted server;
+- `https`: a public HTTPS reverse proxy protected by Home Assistant bearer authentication.
+
+Configuration uses SecretRefs/environment settings such as `HA_BASE_URL` and `HA_TOKEN`. Public documentation uses non-live examples only.
+
+The same typed HA adapter must work over both profiles. Tailnet/local access is preferred for private/high-trust operations when available.
 
 ## Runtime reuse
 

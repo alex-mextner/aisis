@@ -19,9 +19,15 @@ A normal Alice webhook must finish within its response deadline; AISIS does not 
 
 For long work, Alice immediately acknowledges that the task is running and can answer natural status queries.
 
-If the task originated from Alice and the user has enabled same-surface proactive delivery, AISIS may speak the **full completed answer** through the bound Station. Privacy alone is not a reason to downgrade it to “result ready,” because the user explicitly chose Alice as the initiating surface.
+Each bound Station has an explicit completion policy:
 
-If no safe Station binding exists, the result remains pending and is offered on the next Alice turn and/or delivered to other enabled targets such as Telegram.
+- `pending_only`: never speak proactively;
+- `announce_ready` (default): privacy-safe completion notice;
+- `speak_full`: speak the full completed answer for tasks initiated through that bound Station.
+
+`speak_full` is a deliberate user opt-in for a trusted room/Station. It is allowed exactly to support the same-surface behavior requested for Alice, but it is never inferred from ordinary account linking or voice recognition.
+
+If no valid originating Station binding exists, the result remains pending and is offered on the next Alice turn and/or delivered to other enabled targets such as Telegram.
 
 ## Telegram behavior
 
@@ -37,4 +43,4 @@ Ambiguous references require a compact choice rather than guessing.
 
 ## Idempotency
 
-Retries must never duplicate external messages, calendar events, home actions, or calls. Side-effecting workflow steps use idempotency keys or durable execution receipts when available.
+Retries must never duplicate external messages, calendar events, financial mutations/payments, home actions, or calls. Side-effecting workflow steps use idempotency keys or durable execution receipts when available.

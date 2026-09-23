@@ -50,7 +50,7 @@ Because a standard Alice skill cannot initiate a dialog, completed results are p
 
 At the next suitable Alice turn, the assistant can say that a result is ready and ask whether to present it now.
 
-Optional Station TTS delivery is a separate adapter with privacy-safe notification wording by default.
+Optional Station TTS delivery is a separate adapter. Its default is privacy-safe `announce_ready`; explicit per-Station `speak_full` opt-in permits the full result for tasks initiated on that Station.
 
 ## Deadlines
 

@@ -28,6 +28,8 @@ ExpenseSyncBot remains the finance source of truth and is included as a git subm
 
 VibeFlow remains its own repository and is included as a git submodule for the visual workflow editor/runtime. AISIS adds a shared Workflow IR and compilation/integration layer rather than replacing VibeFlow.
 
+Open Remote Commander (ORC, `alex-mextner/open-remote-commander`) remains its own public Go repository and is included as an integration submodule. It is the initial desktop/edge transport for private resources and local harness execution.
+
 `dext0r/yandex_smart_home` remains responsible for native Alice Smart Home commands such as “включи свет”. AISIS does not duplicate that path.
 
 ## 4. High-level architecture
@@ -54,18 +56,26 @@ flowchart LR
   IR --> LOB[Lobster / Task Flow]
   IR --> VFR[VibeFlow native runtime]
 
-  OC --> EDGE[Open Desktop Commander / Edge transport]
+  OC --> EDGE[Open Remote Commander (ORC)]
   EDGE --> HARNESS[Codex / Claude Code / OMP]
   EDGE --> LOCAL[Local & Tailnet resources]
 ```
 
-## 5. OpenClaw responsibilities
+## 5. Deployment and tenancy
+
+Development starts in **single-principal mode**: one trusted person, one OpenClaw workspace/runtime, multiple personal surfaces.
+
+A public hosted Alice skill is a different trust model. Before catalog publication for unrelated users, AISIS must map each principal to an isolated OpenClaw workspace/runtime and isolated secrets. OpenClaw's convenient main session may be shared across one principal's channels, but never across unrelated principals.
+
+OpenClaw multi-agent/workspace routing is useful orchestration, not by itself the security boundary for hostile multi-tenancy. Hosted mode must use process/container/storage isolation appropriate to the deployment.
+
+## 6. OpenClaw responsibilities
 
 OpenClaw owns the general agent loop, main-session continuity, model/provider integration, tool policy, agent harness routing, built-in memory, Skill Workshop/self-learning, automations, heartbeat, background tasks, Task Flow, delivery to supported channels, and generic approval primitives.
 
 AISIS should extend these via public plugin/channel/tool interfaces before modifying OpenClaw core. Upstream patches are a last resort and should be small enough to upstream.
 
-## 6. AISIS responsibilities
+## 7. AISIS responsibilities
 
 AISIS owns:
 - Yandex Alice channel plugin and account-linking UX;
@@ -79,7 +89,7 @@ AISIS owns:
 - model-routing policy additions such as Laya/Jev;
 - setup UX, opinionated defaults, product tests, and cross-domain policies.
 
-## 7. Proactivity and learning
+## 8. Proactivity and learning
 
 AISIS uses OpenClaw automations for explicit one-shot/recurring work, heartbeat for ambient awareness, background tasks for detached work, and standing instructions/skills for persistent behavior.
 
@@ -87,7 +97,7 @@ Self-learning is exposed through OpenClaw Skill Workshop. The initial AISIS defa
 
 Proactive actions still respect resource ACLs, quiet hours, action risk classes, deduplication, and notification policy.
 
-## 8. Conversation and long work UX
+## 9. Conversation and long work UX
 
 Fast deterministic/tool requests should complete synchronously when possible.
 
@@ -99,7 +109,7 @@ A standard Alice Dialogs webhook cannot stream a later continuation after the 4.
 
 If a long task **originated from Alice**, proactive delivery through the same configured Station is allowed and may speak the full result when the user has enabled this behavior. It is not restricted to a generic “ready” notification merely because the result is private. If the originating Station cannot be resolved or proactive speech is disabled, the result remains pending and can be requested on the next Alice turn.
 
-## 9. Alice
+## 10. Alice
 
 Alice is implemented as an OpenClaw channel plugin with a public HTTPS webhook, channel/session binding, pairing/account-link support, outbound structured response rendering, and display/TTS separation.
 
@@ -107,13 +117,13 @@ Alice is implemented as an OpenClaw channel plugin with a public HTTPS webhook, 
 
 Alice voice recognition is not used as a security boundary. Cross-person calendar access is based on explicit delegation/ACL.
 
-## 10. Calendar
+## 11. Calendar
 
 HyperCalendarBot is modified to expose stable domain APIs; it is not merely wrapped without changes.
 
 The same calendar engine handles Telegram and AISIS requests. The API must support agenda lookup, search, create/edit/delete, free/busy, invitations/sharing, reminders, Google account status, and surface-neutral intent execution.
 
-## 11. Finance and calculator
+## 12. Finance and calculator
 
 ExpenseSyncBot is modified to expose stable finance APIs.
 
@@ -121,19 +131,17 @@ Generic calculator semantics are extracted into a reusable monorepo library `@ai
 
 The rendering layer produces canonical value, display text, and speech text independently. Exact/simple rational results such as one third may display as `1/3` while speaking “одна треть”.
 
-## 12. Home Assistant
+## 13. Home Assistant
 
 Native Alice smart-home exposure remains with `dext0r/yandex_smart_home`.
 
 AISIS adds AI-assisted Home Assistant read/action tools for compound/contextual requests.
 
-The known HA endpoints are:
-- private Tailnet: `http://home.tailbfe8ea.ts.net:8123`;
-- external HTTPS: `https://spry-gazelle-4693.dataplicity.io/`.
+Home Assistant endpoints are runtime deployment configuration and are not committed to the public repository.
 
-The direct HTTPS endpoint is allowed as a deployment option, but private Tailnet/local access remains preferable for high-trust operations when available.
+AISIS supports both private Tailnet/local access and an authenticated HTTPS reverse-proxy profile. Private/local access remains preferable for high-trust operations when available.
 
-## 13. Calls
+## 14. Calls
 
 Calls are a central AISIS capability, not a calendar subsystem.
 
@@ -143,7 +151,7 @@ OpenClaw's official voice-call plugin is reused for PSTN providers and its sessi
 
 Call reliability requires automated setup diagnostics, transport smoke tests, state-machine tests, STT/TTS tests, and real end-to-end test-account calls before being declared healthy.
 
-## 14. Workflows / no-code
+## 15. Workflows / no-code
 
 Neither Hermes nor OpenClaw currently provides an n8n-style visual graph editor. OpenClaw provides strong execution primitives: Automations, Task Flow, Lobster typed workflows with approval/resume, hooks, and LLM Task.
 
@@ -156,7 +164,7 @@ AISIS defines a typed Workflow IR that VibeFlow can emit. Initial compilation/ex
 
 The visual editor must show which target a workflow can compile to and why.
 
-## 15. Models and routing
+## 16. Models and routing
 
 OpenClaw provider/harness support is reused rather than duplicating a model gateway.
 
@@ -170,29 +178,29 @@ Routing chooses model/provider/harness and reasoning effort separately.
 
 Fast defaults may use DeepSeek V4.1 Flash. Hard tasks may route to configured frontier models or local/remote harnesses such as Codex, Claude Code, or OMP.
 
-## 16. Local computer access
+## 17. Local computer access
 
-V1 reuses the user's open-source Open Desktop Commander as the first edge/desktop transport for local files, terminals, and harness access.
+V1 reuses the user's public Open Remote Commander (ORC) as the first edge/desktop transport for local files, terminals, and harness access.
 
 The long-term packaging target is a signed Go binary for macOS and Windows, avoiding Node/npx/Python prerequisites.
 
 Harness selection is a central-server routing decision. The edge transport advertises available harnesses/capabilities; it does not decide which harness should receive a job.
 
-## 17. Personal connectors
+## 18. Personal connectors
 
 V1 optional connectors include Telegram personal account (MTProto), email, Notion, and Slack.
 
 Telegram recipient resolution uses stable numeric peer identity; username/display name are hints. Ranking combines aliases, normalization, transliteration, fuzzy matching, recency, frequency, reply behavior, mutual-chat context, and prior confirmed resolutions.
 
-## 18. Repository and openness
+## 19. Repository and openness
 
 AISIS is public/open source.
 
-The top-level repository includes HyperCalendarBot, ExpenseSyncBot, and VibeFlow as git submodules so each project can still be developed, released, and deployed independently.
+The top-level repository includes HyperCalendarBot, ExpenseSyncBot, VibeFlow, and Open Remote Commander as git submodules so each project can still be developed, released, and deployed independently.
 
 Secrets, local endpoints beyond intentionally documented examples, sessions, and user data are never committed.
 
-## 19. Acceptance criteria
+## 20. Acceptance criteria
 
 A user can contact the same central assistant from Telegram and Alice and retain coherent identity/session behavior.
 

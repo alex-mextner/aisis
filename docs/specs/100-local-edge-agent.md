@@ -2,38 +2,52 @@
 
 ## V1 decision
 
-Reuse the public `alex-mextner/open-remote-commander` repository as the first AISIS desktop/edge transport.
+Reuse **Open Remote Commander (ORC)**, the public `alex-mextner/open-remote-commander` repository as the first AISIS desktop/edge transport.
 
 Repository: https://github.com/alex-mextner/open-remote-commander
 
-AISIS should not block its first useful version on a second desktop connector.
+Open Remote Commander is **already a Go implementation** with a Go MCP gateway/relay, outbound Go device agent, pairing, device control, process/filesystem tools, and OAuth-introspection support. AISIS must extend it rather than start another binder.
 
 ## Responsibilities
 
 The edge transport exposes user-approved capabilities such as:
+
 - filesystem and process access;
 - local application/browser automation where supported;
 - private network/Tailnet resources;
 - installed agent harnesses (Codex, Claude Code, OMP);
 - optional Telegram MTProto session ownership.
 
-It maintains outbound authenticated connectivity and does not require opening arbitrary inbound ports.
+It maintains outbound authenticated connectivity and does not require arbitrary inbound ports on the user's computer.
 
 ## Harness selection
 
-The desktop transport **advertises** available harnesses and versions.
+The desktop transport **advertises** installed harnesses, versions, supported capabilities, workspace roots, and current availability.
 
-The central AISIS/OpenClaw runtime chooses the harness/model/effort for each job. Local transport is execution plumbing, not routing policy.
+The central AISIS/OpenClaw runtime chooses the harness/model/effort. ORC is execution/transport plumbing, not the routing policy engine.
 
-## Open Desktop Commander bridge
+## Harness execution extension
 
-Initial AISIS integration may use open-remote-commander's existing remote API/MCP capabilities to start and observe local harness processes.
+Add a first-class ORC capability above generic `start_process`:
 
-The bridge must expose typed execution handles, cancellation, progress/log events, workspace selection, and capability discovery rather than a raw unrestricted shell as the only interface.
+- discover harnesses;
+- start a harness job with typed instruction/workspace/options;
+- return a stable execution id;
+- stream/read progress and bounded logs;
+- accept user answers/continuations;
+- cancel;
+- report final status/artifacts;
+- redact configured secret patterns.
 
-## Go packaging target
+The generic process tools remain available for debugging but should not be the production harness contract.
 
-Open Desktop Commander / the AISIS edge component should migrate toward a signed standalone Go binary for macOS and Windows so installation does not depend on npx, Node, or Python.
+Harness jobs are default-deny outside an explicit opaque workspace binding. The central request includes principal, device, harness, and workspace identity; ORC resolves that workspace locally to an allowlisted canonical path. Model-provided text never becomes an unrestricted raw-shell command merely because a harness job was requested.
+
+## Packaging work
+
+Do **not** rewrite ORC in Go: it is already Go.
+
+The remaining distribution target is signed, low-friction installers and auto-update metadata for macOS and Windows, plus persistent service integration where appropriate. Installation must not require npx, Node, or Python.
 
 A chat/web setup link can download the correct installer, pair the device, and return to AISIS.
 
