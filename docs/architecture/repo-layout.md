@@ -1,52 +1,65 @@
 # Repository Layout
 
-The initial implementation plan should preserve these boundaries while allowing folders to change if tooling requires it.
+AISIS is a public integration/distribution monorepo around OpenClaw plus independently versioned product subrepositories.
 
 ```text
 aisis/
   apps/
-    api/                 # FastAPI ingress: Alice, OAuth callbacks, public API
-    worker/              # durable background jobs
-    telegram/            # universal Telegram assistant surface
-    web/                 # setup/settings UI
-    edge/                # standalone local binder (Go)
+    web/                         # setup, identities, providers, jobs, workflows
   packages/
-    core/                # Turn/Answer/conversation orchestration
-    identity/            # principals, external identities, grants
-    routing/             # deterministic + Laya/Jev route decisions
-    models/              # BYOK provider adapters
-    tools/               # tool registry/contracts
-    jobs/                # durable job state machine
-    delivery/            # Telegram/Alice inbox/Station adapters
-    rendering/           # text, speech, rich output, numbers
-    connectors/          # email/Notion/Slack interfaces
-    telegram_personal/   # MTProto edge connector protocol
-    home_assistant/      # HA semantic tools
-    domain_adapters/
-      hypercalendarbot/
-      expensesyncbot/
+    openclaw-alice/              # Yandex Alice channel plugin
+    openclaw-aisis-tools/        # aggregator/domain connector tools
+    openclaw-routing/            # Laya/Jev routing extensions
+    calculator/                  # reusable @aisis/calculator
+    rendering/                   # display/speech formatting
+    identity/                    # cross-service principal/resource mappings
+    workflow-ir/                 # typed graph/workflow contracts + compilers
+    call-client/                 # central call API client/contracts
+    telegram-personal/           # MTProto connector / resolver
+  services/
+    calls/                       # Telegram P2P call service during migration
+  subrepos/
+    calendar/                    # git submodule: HyperCalendarBot
+    finance/                     # git submodule: ExpenseSyncBot
+    vibeflow/                    # git submodule: VibeFlow
+    desktop/                     # git submodule: Open Remote Commander (alex-mextner/open-remote-commander)
   docs/
     specs/
     architecture/
     research/
+    superpowers/plans/
 ```
 
-## Language/tooling decision
+## Upstream OpenClaw
 
-The cloud/orchestration layer is typed async Python managed by `uv`.
+OpenClaw is consumed as a released dependency/plugin host. It is not vendored as a git submodule by default.
 
-The web UI may use TypeScript where a richer client is justified, but configuration APIs stay typed from one schema source.
+If a required change cannot be expressed through the public Plugin SDK, maintain the smallest possible patch/fork and attempt to upstream it.
 
-The edge binder is a standalone Go binary to make macOS/Windows installation independent of a preinstalled Python runtime.
+## Language/tooling
 
-Existing HyperCalendarBot and ExpenseSyncBot remain TypeScript/Bun repositories and integrate over typed adapters.
+OpenClaw/AISIS plugins, existing domain bots, VibeFlow, and the shared calculator use TypeScript.
 
-## Deployment units
+Use the package manager/runtime required by each upstream project; do not rewrite mature TypeScript services merely to make the repository single-language.
 
-The API and worker are separate processes sharing durable storage/queue abstractions.
+Python remains acceptable for the existing Telegram-call bridge and specialized ML/media components.
 
-The Telegram surface may initially run with API or separately, but must not own domain state.
+The desktop transport is already Go in Open Remote Commander (ORC, `alex-mextner/open-remote-commander`); remaining work is product integration, harness APIs, signed installers, and auto-update.
 
-The edge agent is user/device software and is versioned/revocable independently.
+## Subrepo rules
 
-Domain adapters may call existing services over authenticated internal HTTP/MCP or live in a thin compatibility package when colocated.
+Submodules point at reviewed commits.
+
+Changes to HyperCalendarBot, ExpenseSyncBot, or VibeFlow are developed in their own worktrees/branches/PRs first; the AISIS submodule pointer updates only after those commits are reviewable.
+
+Each subrepo must remain buildable/deployable on its own.
+
+## Deployment
+
+OpenClaw Gateway is the central runtime.
+
+HyperCalendarBot and ExpenseSyncBot expose authenticated service APIs and can retain independent workers/databases.
+
+VibeFlow can run independently or be embedded behind AISIS web/navigation.
+
+Telegram P2P calls may run as a separate service while their dependencies remain Python/native-heavy.

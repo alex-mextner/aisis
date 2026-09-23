@@ -4,7 +4,7 @@
 
 The Telegram bot surface is not enough for personal-account capabilities such as reading the user's recent dialogs or writing as the user.
 
-AISIS therefore defines a separate MTProto connector, preferably running on the Local Edge Agent so the personal Telegram session can stay local.
+AISIS therefore defines a separate MTProto connector, preferably running on the Open Remote Commander (ORC) edge transport so the personal Telegram session can stay local.
 
 ## Capabilities
 
