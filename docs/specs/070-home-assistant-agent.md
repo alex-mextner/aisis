@@ -4,44 +4,38 @@
 
 AISIS does not replace `dext0r/yandex_smart_home` and does not reimplement native Yandex Smart Home exposure.
 
-Direct commands such as “Алиса, включи свет” should continue to use the user's existing integration.
+Direct commands such as “Алиса, включи свет” continue through the existing integration.
 
 ## Goal
 
-Provide an AI-capable HA domain that works from both the AISIS Telegram surface and Alice skill.
-
-Examples include compound commands, questions requiring several entity states, history-based analysis, explanations, and plans involving multiple services.
+Provide AI-capable Home Assistant tools for compound, contextual, analytical, historical, and multi-step requests from the central assistant.
 
 ## Connectivity
 
-The known HA instance is reachable from the user's Tailnet at `http://home.tailbfe8ea.ts.net:8123`.
+Known, verified endpoints:
+- Tailnet: `http://home.tailbfe8ea.ts.net:8123`;
+- public HTTPS proxy: `https://spry-gazelle-4693.dataplicity.io/` (HTTP 200 verified from the development machine on 2026-09-23).
 
-It is not assumed to be publicly reachable. The preferred path is AISIS cloud/core → outbound Local Edge Agent → private HA API.
+The adapter supports both. Tailnet/local transport is preferred for private/high-trust access; HTTPS is useful for server deployments that cannot join the Tailnet.
 
-A colocated deployment inside the Tailnet may use the same typed adapter directly.
+Secrets are never stored in the public repository.
+
+## Runtime reuse
+
+Hermes's HA integration is a reference for entity/service tools and filtered WebSocket `state_changed` events.
+
+OpenClaw remains the central runtime; AISIS can implement HA as an OpenClaw tool/plugin or connect an existing supported HA/MCP integration.
 
 ## Tool groups
 
-Read tools cover areas/entities, state, attributes, history/statistics, scripts/scenes metadata, and capability discovery.
+Read tools cover areas/entities, states/attributes, history/statistics, scripts/scenes metadata, services, and capability discovery.
 
-Action tools cover service calls, scene/script execution, and compound plans.
+Action tools cover service calls and validated compound plans.
 
-The model receives a filtered home context relevant to the query rather than the entire HA state dump.
+The model receives filtered relevant state rather than the entire home state.
 
-## Action safety
+## Safety
 
-The adapter classifies actions by risk. Lighting/climate may be configured as low risk; locks, alarms, garage doors, and other sensitive actions default to confirmation.
+Actions are risk-classified. Locks, alarms, garage doors, and similarly sensitive operations default to confirmation.
 
-Compound plans are validated before execution and return per-step results.
-
-## Telegram and Alice
-
-Both surfaces call the same HA domain protocol.
-
-The HA-specific Telegram bot may expose specialized commands/debugging, while the universal aggregator can call HA as one tool group.
-
-## YandexDialogs reference
-
-AlexxIT/YandexDialogs is useful as reference code for Alice → HA: it turns Home Assistant into a Yandex Dialogs webhook and routes phrases into HA automations/intents.
-
-AISIS does not depend on that topology because it would require making HA itself reachable as the Dialogs webhook; our public ingress plus private edge path keeps HA private.
+The existing native Yandex Smart Home path remains the fastest route for ordinary direct commands.

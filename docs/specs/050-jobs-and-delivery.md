@@ -1,45 +1,40 @@
 # Durable Jobs and Delivery
 
-## Purpose
+## Runtime
 
-Long-running work must not be represented as an HTTP request waiting forever.
+Use OpenClaw background tasks, Task Flow, Automations, and Lobster approval/resume primitives rather than introducing a parallel AISIS job engine unless a proven gap requires one.
 
-A `Job` is a durable execution record that can survive process restart, ask the user questions, emit progress, and deliver final output later.
+AISIS adds product-level metadata that links runtime tasks to a principal, originating surface, resource grants, and delivery preferences.
 
 ## Lifecycle
 
-Canonical states are `queued`, `running`, `waiting_user`, `succeeded`, `failed`, and `cancelled`.
+The product-level state maps onto runtime state and exposes at least:
+`queued | running | waiting_user | succeeded | failed | cancelled`.
 
-Jobs store the original request, principal, conversation reference, route/executor, tool grants, checkpoints, progress events, result, artifacts, and delivery receipts.
+Jobs/tasks retain original request, conversation/session reference, selected executor/model/harness, progress, pending question/approval, result/artifacts, and delivery receipts.
 
 ## Alice behavior
 
-If a request will not fit within Alice's response budget, AISIS acknowledges immediately: work has started and can be queried by status.
+A normal Alice webhook must finish within its response deadline; AISIS does not stream the later result into that HTTP response.
 
-The standard Alice skill does not rely on streaming a later continuation into the same response.
+For long work, Alice immediately acknowledges that the task is running and can answer natural status queries.
 
-When the result is ready, the next Alice interaction may restore context and ask: “Ты спрашивал … Ответ готов. Рассказать сейчас или позже?”
+If the task originated from Alice and the user has enabled same-surface proactive delivery, AISIS may speak the **full completed answer** through the bound Station. Privacy alone is not a reason to downgrade it to “result ready,” because the user explicitly chose Alice as the initiating surface.
+
+If no safe Station binding exists, the result remains pending and is offered on the next Alice turn and/or delivered to other enabled targets such as Telegram.
 
 ## Telegram behavior
 
-Telegram may receive progress updates and the final answer proactively.
+Telegram may receive progress and final results proactively.
 
-For supported clients the preferred final form is one Rich Message with a visible summary and expandable details. Draft streaming can be used while an answer is actively produced.
-
-## Optional Station delivery
-
-A Station delivery adapter may send a privacy-safe ready notification through a locally connected HA/YandexStation path.
-
-It is deliberately separate from Yandex Dialogs and disabled unless the user enables it.
+Prefer a single Rich Message with a concise visible summary and expandable details. Preserve one logical answer instead of arbitrary 4096-character message chunks.
 
 ## Status queries
 
-Natural language status resolution finds active/recent jobs by explicit ID, current conversation, recency, and semantic reference to the original request.
+Natural-language resolution finds active/recent tasks by explicit ID, current session, recency, and semantic relation to the original request.
 
-If several jobs plausibly match, the assistant asks a compact disambiguation question.
+Ambiguous references require a compact choice rather than guessing.
 
 ## Idempotency
 
-External side effects carry idempotency keys where the downstream service supports them.
-
-Retries must never silently duplicate messages, calendar events, payments, or home actions.
+Retries must never duplicate external messages, calendar events, home actions, or calls. Side-effecting workflow steps use idempotency keys or durable execution receipts when available.

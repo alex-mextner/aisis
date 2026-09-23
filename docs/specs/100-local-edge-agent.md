@@ -1,47 +1,46 @@
-# Local Edge Agent / Binder
+# Local Edge / Desktop Transport
 
-## Goal
+## V1 decision
 
-Provide a one-click bridge between AISIS and private/local capabilities on the user's computer without opening inbound ports.
+Reuse the public `alex-mextner/open-remote-commander` repository as the first AISIS desktop/edge transport.
 
-It enables local Codex, Claude Code, OMP, private Telegram MTProto sessions, Tailnet-only Home Assistant, and future local files/apps.
+Repository: https://github.com/alex-mextner/open-remote-commander
 
-## Packaging
+AISIS should not block its first useful version on a second desktop connector.
 
-The edge agent is a standalone signed binary with installers for macOS and Windows.
+## Responsibilities
 
-It must not rely on a system Python installation. Python-based plugins, when needed, are managed inside the product rather than assumed from the OS.
+The edge transport exposes user-approved capabilities such as:
+- filesystem and process access;
+- local application/browser automation where supported;
+- private network/Tailnet resources;
+- installed agent harnesses (Codex, Claude Code, OMP);
+- optional Telegram MTProto session ownership.
 
-## Pairing UX
+It maintains outbound authenticated connectivity and does not require opening arbitrary inbound ports.
 
-The assistant can send a short-lived signed setup link.
+## Harness selection
 
-The installer opens a browser pairing flow, shows the device name and requested capability groups, and requires explicit user approval.
+The desktop transport **advertises** available harnesses and versions.
 
-After pairing, the edge agent maintains an outbound authenticated connection to AISIS.
+The central AISIS/OpenClaw runtime chooses the harness/model/effort for each job. Local transport is execution plumbing, not routing policy.
 
-## Executor discovery
+## Open Desktop Commander bridge
 
-The agent detects supported local executors such as `codex`, `claude`, and `omp`, reports capability/version metadata, and never uploads their credentials.
+Initial AISIS integration may use open-remote-commander's existing remote API/MCP capabilities to start and observe local harness processes.
 
-Executions are represented as durable AISIS jobs with logs/progress filtered for secrets.
+The bridge must expose typed execution handles, cancellation, progress/log events, workspace selection, and capability discovery rather than a raw unrestricted shell as the only interface.
 
-## Private connectors
+## Go packaging target
 
-Home Assistant and Telegram MTProto can run as edge-owned connectors.
+Open Desktop Commander / the AISIS edge component should migrate toward a signed standalone Go binary for macOS and Windows so installation does not depend on npx, Node, or Python.
 
-The cloud sees typed tool results; private session keys and HA long-lived tokens can remain on the device.
+A chat/web setup link can download the correct installer, pair the device, and return to AISIS.
 
 ## Security
 
-Pairing keys are device-scoped and revocable.
+Device keys are revocable and capability-scoped. Local credentials stay local when possible.
 
-Commands are allowlisted by capability; arbitrary shell execution is not a default capability.
+Commands/actions remain subject to central policy and audit.
 
-Local actions have the same risk/confirmation policy as cloud tools and produce auditable receipts.
-
-## Offline behavior
-
-The cloud marks a device unavailable when the outbound channel is down and can keep a job queued or choose an explicitly configured cloud fallback.
-
-It never silently substitutes a different computer for a device-scoped action.
+The system never silently substitutes a different device for a device-scoped task.
