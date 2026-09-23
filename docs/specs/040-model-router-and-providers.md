@@ -26,6 +26,10 @@ The routing chain is:
 
 Laya and Jev implement the same `RouteDecisionProvider` protocol and can be A/B tested.
 
+For Russian routing, the Laya multilingual checkpoint is the default Laya candidate; the English-only checkpoint must not be selected merely because it is the package root. Laya is intended to be preloaded to avoid cold-start latency.
+
+Jev is optional and may be remote; loss of Jev never blocks deterministic routing or the configured static fallback.
+
 ## Effort
 
 Reasoning effort is independent from model identity. Canonical effort levels are `none | low | medium | high | xhigh | max`; adapters map unsupported values to the nearest safe supported value.

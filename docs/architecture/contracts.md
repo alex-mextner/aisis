@@ -23,6 +23,14 @@ class ExternalIdentity(BaseModel):
     subject: str
     principal_id: PrincipalId
 
+Capability = Literal["read", "search", "create", "update", "delete", "send", "admin"]
+
+class ResourceGrant(BaseModel):
+    principal_id: PrincipalId
+    resource_kind: str
+    resource_id: str
+    capabilities: set[Capability]
+
 class AliceContext(BaseModel):
     kind: Literal["alice"] = "alice"
     session_id: str
@@ -43,8 +51,16 @@ class WebContext(BaseModel):
     kind: Literal["web"] = "web"
     session_id: str
 
+class ApiContext(BaseModel):
+    kind: Literal["api"] = "api"
+    client_id: str
+
+class EdgeContext(BaseModel):
+    kind: Literal["edge"] = "edge"
+    device_id: UUID
+
 SurfaceContext = Annotated[
-    AliceContext | TelegramContext | WebContext,
+    AliceContext | TelegramContext | WebContext | ApiContext | EdgeContext,
     Field(discriminator="kind"),
 ]
 
@@ -77,7 +93,7 @@ class Answer(BaseModel):
     display_text: str
     speech_text: str | None = None
     rich: RichDocument | None = None
-    actions: list[AnswerAction] = []
+    actions: list[AnswerAction] = Field(default_factory=list)
     end_conversation: bool = False
 
 class RenderedNumber(BaseModel):
@@ -140,7 +156,7 @@ class RouteDecision(BaseModel):
     kind: ExecutionKind
     model_alias: ModelAlias | None = None
     effort: Effort = "none"
-    tool_groups: list[str] = []
+    tool_groups: list[str] = Field(default_factory=list)
     context_budget_tokens: int
     time_budget_ms: int
     reason_code: str
@@ -171,6 +187,10 @@ class JobProgress(BaseModel):
     message: str
     percent: float | None = None
 
+class PendingQuestion(BaseModel):
+    prompt: str
+    choices: list[str] = Field(default_factory=list)
+
 class Job(BaseModel):
     id: JobId
     principal_id: PrincipalId
@@ -180,7 +200,8 @@ class Job(BaseModel):
     route: RouteDecision
     created_at: datetime
     updated_at: datetime
-    progress: list[JobProgress] = []
+    progress: list[JobProgress] = Field(default_factory=list)
+    pending_question: PendingQuestion | None = None
     result: Answer | None = None
 
 class JobRunner(Protocol):
@@ -244,4 +265,25 @@ class TelegramPersonalConnector(PersonalConnector, Protocol):
     async def resolve_peer(self, principal_id: PrincipalId, query: str) -> RecipientResolution: ...
     async def recent_messages(self, principal_id: PrincipalId, peer_id: int, limit: int) -> list[object]: ...
     async def send_message(self, principal_id: PrincipalId, peer_id: int, text: str) -> object: ...
+```
+
+## Local edge executors
+
+```python
+class EdgeExecutorSpec(BaseModel):
+    name: Literal["codex", "claude_code", "omp"]
+    version: str
+    device_id: UUID
+    capabilities: set[str]
+
+class EdgeExecutionRequest(BaseModel):
+    job_id: JobId
+    executor: str
+    instruction: str
+    workspace_ref: str | None = None
+
+class EdgeExecutor(Protocol):
+    async def discover(self) -> list[EdgeExecutorSpec]: ...
+    async def start(self, request: EdgeExecutionRequest) -> str: ...
+    async def cancel(self, execution_id: str) -> None: ...
 ```
