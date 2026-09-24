@@ -6,7 +6,7 @@ The product is not tied to one messenger, one model, or one automation platform.
 
 ## Product shape
 
-- **Surfaces:** Alice, Telegram, web/API, local edge agent.
+- **Surfaces:** Alice, Telegram, web/API, local edge agent, local voice speaker.
 - **Existing domain services:** HyperCalendarBot for calendar, ExpenseSyncBot for finance/calculator behavior.
 - **New domain service:** Home Assistant conversational agent, without replacing `dext0r/yandex_smart_home`.
 - **Personal connectors:** Telegram MTProto, email, Notion, Slack.

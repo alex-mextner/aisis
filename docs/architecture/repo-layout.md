@@ -10,6 +10,7 @@ aisis/
     telegram/            # universal Telegram assistant surface
     web/                 # setup/settings UI
     edge/                # standalone local binder (Go)
+    speaker/             # local voice speaker surface (spec 140), Python on the home box
   packages/
     core/                # Turn/Answer/conversation orchestration
     identity/            # principals, external identities, grants

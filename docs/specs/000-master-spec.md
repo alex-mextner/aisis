@@ -74,6 +74,7 @@ The initial surfaces are:
 - Telegram aggregator bot plus existing domain bots.
 - Web configuration and authorization UI.
 - Local Edge Agent for private/local executors and resources.
+- Local voice speaker: self-hosted wake word, VAD and STT on the home box as an alternative to Alice (spec 140).
 
 A surface is presentation and transport only. Business rules, tools, jobs, model routing, and memory live outside it.
 

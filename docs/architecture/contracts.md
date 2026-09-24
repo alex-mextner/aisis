@@ -10,7 +10,7 @@ from typing import Annotated, Literal, Protocol
 from uuid import UUID
 from pydantic import BaseModel, Field
 
-Surface = Literal["alice", "telegram", "web", "api", "edge"]
+Surface = Literal["alice", "telegram", "web", "api", "edge", "speaker"]
 PrincipalId = UUID
 ConversationId = UUID
 JobId = UUID
@@ -43,8 +43,17 @@ class WebContext(BaseModel):
     kind: Literal["web"] = "web"
     session_id: str
 
+class SpeakerContext(BaseModel):
+    kind: Literal["speaker"] = "speaker"
+    device_id: UUID
+    room: str | None = None
+    speaker_label: str | None = None  # verification hint only, never an auth boundary
+    wake_confidence: float | None = None
+    has_screen: bool = False
+    deadline_at: datetime
+
 SurfaceContext = Annotated[
-    AliceContext | TelegramContext | WebContext,
+    AliceContext | TelegramContext | WebContext | SpeakerContext,
     Field(discriminator="kind"),
 ]
 
@@ -205,8 +214,12 @@ class StationTtsDelivery(BaseModel):
     edge_device_id: UUID
     entity_id: str
 
+class LocalSpeakerDelivery(BaseModel):
+    kind: Literal["local_speaker"] = "local_speaker"
+    device_id: UUID
+
 DeliveryTarget = Annotated[
-    TelegramDelivery | AliceInboxDelivery | StationTtsDelivery,
+    TelegramDelivery | AliceInboxDelivery | StationTtsDelivery | LocalSpeakerDelivery,
     Field(discriminator="kind"),
 ]
 
