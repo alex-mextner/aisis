@@ -118,6 +118,8 @@ Alice is implemented as an OpenClaw channel plugin with a public HTTPS webhook, 
 
 Alice voice recognition is not used as a security boundary. Cross-person calendar access is based on explicit delegation/ACL.
 
+No voice surface (Alice, Stations, the local speaker, calls) is a security boundary: a voice-only turn never authorizes a sensitive action, and a spoken confirmation does not count (spec 020, Confirmation policy).
+
 ## 11. Calendar
 
 HyperCalendarBot is modified to expose stable domain APIs; it is not merely wrapped without changes.

@@ -29,6 +29,14 @@ Each bound Station has an explicit completion policy:
 
 If no valid originating Station binding exists, the result remains pending and is offered on the next Alice turn and/or delivered to other enabled targets such as Telegram.
 
+## Local speaker behavior
+
+Each paired local speaker (spec 140) has the same completion policy as a Station, set per speaker binding: `pending_only`, `announce_ready` (default) or `speak_full`.
+
+`announce_ready` says only that a result is ready and where to read it, never its content. `speak_full` is a per-device opt-in for a trusted room and covers only tasks initiated through that speaker; results of tasks started on other surfaces are at most announced. It is never inferred from voice identification, and quiet hours apply.
+
+A `LocalSpeakerDelivery` names the principal and the speaker binding. If that binding is gone or belongs to another principal, nothing is spoken and the result goes to other enabled targets such as Telegram.
+
 ## Telegram behavior
 
 Telegram may receive progress and final results proactively.

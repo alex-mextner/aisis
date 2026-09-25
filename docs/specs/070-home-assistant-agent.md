@@ -39,6 +39,6 @@ The model receives filtered relevant state rather than the entire home state.
 
 ## Safety
 
-Actions are risk-classified. Locks, alarms, garage doors, and similarly sensitive operations default to confirmation.
+Actions are risk-classified. Locks, alarms, garage doors, and similarly sensitive operations default to confirmation; from a voice surface that confirmation is an approval on an authenticated surface, never a spoken «да» (spec 020).
 
 The existing native Yandex Smart Home path remains the fastest route for ordinary direct commands.

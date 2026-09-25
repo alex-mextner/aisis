@@ -18,7 +18,7 @@ ConversationId = UUID
 class ExternalIdentity(BaseModel):
     provider: Literal[
         "alice", "telegram_bot", "telegram_mtproto",
-        "google", "email", "slack", "notion", "edge"
+        "google", "email", "slack", "notion", "edge", "speaker"
     ]
     subject: str
     principal_id: PrincipalId
@@ -67,12 +67,15 @@ class EdgeContext(BaseModel):
 
 class SpeakerContext(BaseModel):
     kind: Literal["speaker"] = "speaker"
-    device_id: UUID
+    device_id: UUID  # paired device; ProductTurn.principal_id comes from its binding
     room: str | None = None
-    speaker_label: str | None = None  # verification hint only, never an auth boundary
-    wake_confidence: float | None = None
+    # Voice-identification hint (spec 140): may select preferences (music account,
+    # persona), never principal_id, grants, tool policy or confirmations; never
+    # stored as identity in memory or in task bindings.
+    speaker_label: str | None = None
+    wake_confidence: float | None = Field(default=None, ge=0, le=1)
     has_screen: bool = False
-    deadline_at: datetime
+    deadline_at: datetime | None = None
 
 SurfaceContext = Annotated[
     AliceContext | TelegramContext | WebContext | ApiContext | EdgeContext | SpeakerContext,
@@ -133,7 +136,7 @@ class DomainToolSpec(BaseModel):
     title: str
     input_schema: dict[str, object]
     output_schema: dict[str, object]
-    required_capabilities: set[str]
+    required_capabilities: set[Capability]
     risk: Risk
     latency: Latency
     idempotent: bool
@@ -168,11 +171,12 @@ This is an AISIS policy result consumed by an OpenClaw adapter. It is **not** a 
 ModelAlias = Literal["fast", "balanced", "deep", "background"]
 Effort = Literal["none", "low", "medium", "high", "xhigh", "max"]
 ExecutionKind = Literal["deterministic", "model", "harness", "background"]
+HarnessName = Literal["codex", "claude_code", "omp"]
 
 class RouteDecision(BaseModel):
     kind: ExecutionKind
     model_alias: ModelAlias | None = None
-    harness: Literal["codex", "claude_code", "omp"] | None = None
+    harness: HarnessName | None = None
     effort: Effort = "none"
     tool_groups: list[str] = Field(default_factory=list)
     context_budget_tokens: int
@@ -195,7 +199,7 @@ class RuntimeTaskBinding(BaseModel):
     runtime: Literal["openclaw_task", "openclaw_automation", "lobster", "vibeflow"]
     runtime_task_id: str
     original_request: str
-    originating_surface: SurfaceContext
+    originating_surface: SurfaceContext  # stored with SpeakerContext.speaker_label = None
     created_at: datetime
 ~~~
 
@@ -217,7 +221,8 @@ class StationTtsDelivery(BaseModel):
 
 class LocalSpeakerDelivery(BaseModel):
     kind: Literal["local_speaker"] = "local_speaker"
-    device_id: UUID
+    principal_id: PrincipalId
+    speaker_binding_id: UUID
 
 DeliveryTarget = Annotated[
     TelegramDelivery | AlicePendingDelivery | StationTtsDelivery | LocalSpeakerDelivery,
@@ -255,7 +260,6 @@ class TelegramPersonalConnector(Protocol):
 ## Open Remote Commander harness extension
 
 ~~~python
-HarnessName = Literal["codex", "claude_code", "omp"]
 ExecutionId = str
 WorkspaceId = str
 

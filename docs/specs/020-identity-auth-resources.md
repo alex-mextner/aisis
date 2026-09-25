@@ -4,7 +4,7 @@
 
 A `Principal` is the assistant's stable person identity. External accounts are linked as `ExternalIdentity` records.
 
-Examples include Alice account subject, Telegram user ID, Telegram MTProto account, Google account, Slack member, Notion user, email identity, and edge-device identity.
+Examples include Alice account subject, Telegram user ID, Telegram MTProto account, Google account, Slack member, Notion user, email identity, edge-device identity, and paired local speaker devices.
 
 No provider-specific ID is used as the global primary key.
 
@@ -12,7 +12,7 @@ No provider-specific ID is used as the global primary key.
 
 Alice `user_id` can link an account but must not be treated as proof of a physical speaker.
 
-Any future speaker hint is advisory only. Sensitive calendar, message, finance, or home actions authorize against the linked principal and ACL.
+Speaker hints, such as the local speaker's voice identification (spec 140), are advisory only: they may select preferences (music account, persona), never the principal, grants or confirmation requirements. A local speaker turn's principal comes from device pairing. Sensitive calendar, message, finance, or home actions authorize against the linked principal and ACL.
 
 ## Account linking
 
@@ -43,5 +43,7 @@ For edge-owned resources, the cloud stores only a device-scoped capability refer
 Actions have a risk class. Read-only operations usually run immediately.
 
 External communication, destructive changes, finance-related mutations, and ambiguous-recipient writes can require confirmation.
+
+Voice-only turns (Alice, Stations, the local speaker, calls) never authorize tools with risk `sensitive`, `destructive` or `external_write`, finance mutations or payments, lock/alarm/garage/door actions, or messages sent as the user. A spoken confirmation such as «да» does not count; these actions require approval on an authenticated surface such as Telegram or web.
 
 A user may configure trusted low-risk automations, but every bypass is scoped and auditable.
