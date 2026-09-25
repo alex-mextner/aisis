@@ -78,6 +78,11 @@ class CheckContractsTest(unittest.TestCase):
         text = self.mutate("class RichDocument(BaseModel):", "class RichDocument(BaseModel)")
         self.assertFails(text, f":{line_of(text, 'class RichDocument(BaseModel)')}: SyntaxError")
 
+    def test_form_feed_does_not_shift_reported_lines(self):
+        text = self.mutate("## Identity and resource grants\n", "## Identity and resource grants \f page\n")
+        text = self.mutate("class RichDocument(BaseModel):", "class RichDocument(BaseModel)", text)
+        self.assertFails(text, f":{line_of(text, 'class RichDocument(BaseModel)')}: SyntaxError")
+
     def test_runtime_error_reports_doc_line(self):
         text = self.mutate("ExecutionId = str\n", "ExecutionId = undefined_name\n")
         self.assertFails(text, f":{line_of(text, 'ExecutionId = undefined_name')}:", "NameError")
@@ -106,7 +111,7 @@ class CheckContractsTest(unittest.TestCase):
 
     def test_python_fence_in_blockquote_or_list_fails(self):
         for opener in ("> ~~~python", ">~~~python", ">> ~~~python", "- ~~~Python", "* ```python",
-                       "1. ~~~python", "2) ~~~py"):
+                       "1. ~~~python", "2) ~~~py", "> - ~~~python", "> 1. ~~~python", "- - ~~~python"):
             with self.subTest(opener=opener):
                 text = self.mutate("~~~python\nclass AnswerAction", f"{opener}\nclass AnswerAction")
                 self.assertFails(text, "python fence inside a blockquote or list")

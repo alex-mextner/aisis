@@ -31,8 +31,10 @@ REQUIRED_MODELS = (
 REQUIRED = UNIONS + REQUIRED_MODELS
 # Fence opener: ``` or ~~~ (3 or more), optional spaces, optional info string (first word = language).
 FENCE_OPEN = re.compile(r"^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})[ \t]*(?P<lang>[^`\s]*)(?P<rest>.*)$")
-# A python-looking fence behind a blockquote or list marker, which the checker would not see.
-PREFIXED_PY_FENCE = re.compile(r"^[ \t]*(?:>|[-*+][ \t]|\d+[.)][ \t])[ \t>]*(?:`{3,}|~{3,})[ \t]*py", re.I)
+# A python-looking fence behind any mix of blockquote and list markers, which the checker would not see.
+PREFIXED_PY_FENCE = re.compile(
+    r"^[ \t]*(?:>[ \t]*|[-*+][ \t]+|\d+[.)][ \t]+)+(?:`{3,}|~{3,})[ \t]*py", re.I
+)
 PYTHON_LANGS = {"python", "py", "python3"}
 TYPE_ALIAS = getattr(ast, "TypeAlias", ())  # `type X = ...` (Python 3.12+)
 
@@ -67,7 +69,9 @@ def fence_open(line: str) -> re.Match | None:
 
 def python_blocks(path: Path) -> list[Block]:
     """Every python fence in the doc; malformed, near-miss or swallowed fences fail loudly."""
-    lines = path.read_text(encoding="utf-8").splitlines()  # also strips CRLF line endings
+    # read_text turns CRLF/CR into "\n"; split only on "\n" (not splitlines(), which also splits on
+    # form feeds and Unicode separators) so line numbers match what editors and GitHub show.
+    lines = path.read_text(encoding="utf-8").split("\n")
     blocks, i = [], 0
     while i < len(lines):
         m = fence_open(lines[i])
@@ -93,6 +97,7 @@ def python_blocks(path: Path) -> list[Block]:
         j = i + 1
         while j < len(lines) and not close.match(lines[j]):
             inner = fence_open(lines[j])
+            # Deliberately broad (any py* language): better a loud false alarm than a hidden block.
             if not is_python and inner and inner["lang"].lower().startswith("py"):
                 raise CheckError(
                     f"{at(path, j + 1)}: python fence inside the {fence} fence opened at line {opened}; "
