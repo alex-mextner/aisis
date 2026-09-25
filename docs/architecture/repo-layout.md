@@ -2,6 +2,8 @@
 
 AISIS is a public integration/distribution monorepo around OpenClaw plus independently versioned product subrepositories.
 
+**Status:** target layout (planned). Today the repository contains only `docs/`, `scripts/` and CI. The `apps/`, `packages/`, `services/` and `subrepos/` directories and the git submodules below do not exist yet; each is created when implementation of that part starts. Folders may still change if tooling requires it.
+
 ```text
 aisis/
   apps/

@@ -19,7 +19,7 @@ The authoritative product definition is [docs/specs/000-master-spec.md](docs/spe
 
 - `docs/specs/` — product and subsystem specifications.
 - `docs/architecture/contracts.md` — typed contracts and discriminated unions.
-- `docs/architecture/repo-layout.md` — repository boundaries and deployment shape.
+- `docs/architecture/repo-layout.md` — target (planned) repository layout, boundaries and deployment shape.
 - `docs/research/` — verified platform constraints and existing-system notes.
 
 ## Design principles

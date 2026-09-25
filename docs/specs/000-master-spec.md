@@ -14,7 +14,7 @@ The initial domains are calendar, finance, home, general questions, personal Tel
 
 AISIS uses **OpenClaw as the primary central-agent runtime** rather than rebuilding session continuity, memory, model providers, harness integration, proactive heartbeat, background tasks, self-learning, channel routing, and automation from scratch.
 
-AISIS is not a hard fork of OpenClaw by default. It is a public product repository containing OpenClaw plugins, domain adapters, shared libraries, configuration, tests, and git submodules for existing products.
+AISIS is not a hard fork of OpenClaw by default. It is a public product repository that will contain OpenClaw plugins, domain adapters, shared libraries, configuration, tests, and git submodules for existing products. Today it holds only specs, architecture notes and CI; `docs/architecture/repo-layout.md` describes the planned target layout.
 
 Hermes Agent remains an evaluated alternative/reference implementation. Its learning loop, Python/uv implementation, Home Assistant integration, cron/skills, and messaging gateway are useful references, but V1 targets OpenClaw because its current runtime already includes channel plugins, Codex/Claude runtimes, self-learning, durable automation/task-flow primitives, and typed resumable Lobster workflows.
 
@@ -22,13 +22,13 @@ AISIS-specific domain APIs remain runtime-neutral enough that a future Hermes ad
 
 ## 3. Existing systems become first-class subrepositories
 
-HyperCalendarBot remains the calendar source of truth. It is included in the AISIS checkout as a git submodule and gains a stable authenticated API/tool surface. Telegram remains supported by HyperCalendarBot, while Alice and the AISIS aggregator use the same calendar logic through that API.
+HyperCalendarBot remains the calendar source of truth. It will be included in the AISIS checkout as a git submodule and gains a stable authenticated API/tool surface. Telegram remains supported by HyperCalendarBot, while Alice and the AISIS aggregator use the same calendar logic through that API.
 
-ExpenseSyncBot remains the finance source of truth and is included as a git submodule. It gains a stable API/tool surface.
+ExpenseSyncBot remains the finance source of truth and will be included as a git submodule. It gains a stable API/tool surface.
 
-VibeFlow remains its own repository and is included as a git submodule for the visual workflow editor/runtime. AISIS adds a shared Workflow IR and compilation/integration layer rather than replacing VibeFlow.
+VibeFlow remains its own repository and will be included as a git submodule for the visual workflow editor/runtime. AISIS adds a shared Workflow IR and compilation/integration layer rather than replacing VibeFlow.
 
-Open Remote Commander (ORC, `alex-mextner/open-remote-commander`) remains its own public Go repository and is included as an integration submodule. It is the initial desktop/edge transport for private resources and local harness execution.
+Open Remote Commander (ORC, `alex-mextner/open-remote-commander`) remains its own public Go repository and will be included as an integration submodule. It is the initial desktop/edge transport for private resources and local harness execution.
 
 `dext0r/yandex_smart_home` remains responsible for native Alice Smart Home commands such as “включи свет”. AISIS does not duplicate that path.
 
@@ -200,7 +200,7 @@ Telegram recipient resolution uses stable numeric peer identity; username/displa
 
 AISIS is public/open source.
 
-The top-level repository includes HyperCalendarBot, ExpenseSyncBot, VibeFlow, and Open Remote Commander as git submodules so each project can still be developed, released, and deployed independently.
+In the target layout the top-level repository includes HyperCalendarBot, ExpenseSyncBot, VibeFlow, and Open Remote Commander as git submodules so each project can still be developed, released, and deployed independently. The submodules are added when their integration work starts; none exist yet.
 
 Secrets, local endpoints beyond intentionally documented examples, sessions, and user data are never committed.
 
