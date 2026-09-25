@@ -1,0 +1,10 @@
+# gitleaks configuration: the default rules plus private-endpoint rules, so the secret scan
+# also enforces spec 000 section 19 (no local endpoints committed to this public repository).
+[extend]
+useDefault = true
+
+[[rules]]
+id = "tailnet-hostname"
+description = "Tailscale MagicDNS hostname of a private tailnet"
+regex = '''(?i)\b[a-z0-9-]+\.[a-z0-9-]+\.ts\.net\b'''
+keywords = ["ts.net"]
