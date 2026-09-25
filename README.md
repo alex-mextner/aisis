@@ -2,7 +2,7 @@
 
 AISIS is a universal AI assistant with explicit, permissioned access to a person's digital resources.
 
-The product is not tied to one messenger, one model, or one automation platform. The same assistant can be reached from Alice, Telegram, the web UI, and local computer agents while reusing the same identity, conversations, tools, jobs, memory, and policy layer.
+The product is not tied to one messenger, one model, or one automation platform. The same assistant can be reached from Alice, Telegram, the web UI, a local voice speaker, and local computer agents while reusing the same identity, conversations, tools, jobs, memory, and policy layer.
 
 ## Product shape
 

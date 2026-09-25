@@ -6,9 +6,10 @@ AISIS is a public integration/distribution monorepo around OpenClaw plus indepen
 aisis/
   apps/
     web/                         # setup, identities, providers, jobs, workflows
-    speaker/                     # local voice speaker surface (spec 140): wake/VAD/STT loop on the home box, talks to the OpenClaw gateway
+    speaker/                     # local voice speaker client (spec 140): vad-ctl events + in-process stt-lib (Python), talks to openclaw-speaker
   packages/
     openclaw-alice/              # Yandex Alice channel plugin
+    openclaw-speaker/            # local voice speaker channel plugin (spec 140)
     openclaw-aisis-tools/        # aggregator/domain connector tools
     openclaw-routing/            # Laya/Jev routing extensions
     calculator/                  # reusable @aisis/calculator
@@ -43,7 +44,7 @@ OpenClaw/AISIS plugins, existing domain bots, VibeFlow, and the shared calculato
 
 Use the package manager/runtime required by each upstream project; do not rewrite mature TypeScript services merely to make the repository single-language.
 
-Python remains acceptable for the existing Telegram-call bridge and specialized ML/media components.
+Python remains acceptable for the existing Telegram-call bridge and specialized ML/media components, including the local speaker client `apps/speaker`, which embeds `stt-lib`.
 
 The desktop transport is already Go in Open Remote Commander (ORC, `alex-mextner/open-remote-commander`); remaining work is product integration, harness APIs, signed installers, and auto-update.
 

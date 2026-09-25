@@ -6,7 +6,7 @@
 
 ## 1. Product intent
 
-AISIS is a continuously available personal AI assistant with explicit, permissioned access to a person's digital resources. It should feel like one assistant across Alice, Telegram, web, calls, and local computer harnesses.
+AISIS is a continuously available personal AI assistant with explicit, permissioned access to a person's digital resources. It should feel like one assistant across Alice, Telegram, web, calls, the local voice speaker, and local computer harnesses.
 
 The initial domains are calendar, finance, home, general questions, personal Telegram, email, Notion, and Slack. AISIS also supports long autonomous work, proactive monitoring, durable automations, self-learning, and visual workflow authoring.
 
@@ -40,6 +40,7 @@ flowchart LR
   T[Telegram] --> OC
   W[Web / Control UI] --> OC
   C[Voice calls] --> OC
+  S[Local speaker channel plugin] --> OC
 
   OC --> MEM[Memory + Self-learning]
   OC --> AUTO[Automations + Heartbeat + Tasks]
@@ -85,7 +86,7 @@ AISIS owns:
 - reusable calculator/rendering library;
 - Telegram personal MTProto connector and fuzzy recipient resolver;
 - central voice/call capability, including Telegram P2P call transport;
-- local voice speaker surface on the home box (own wake word, VAD, STT; spec 140), an alternative to Alice that talks to the OpenClaw gateway;
+- local voice speaker surface on the home server (own wake word, VAD, STT; spec 140), an alternative to Alice that reaches the OpenClaw Gateway through the `openclaw-speaker` channel plugin;
 - VibeFlow integration and Workflow IR;
 - model-routing policy additions such as Laya/Jev;
 - setup UX, opinionated defaults, product tests, and cross-domain policies.

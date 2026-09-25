@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make Alice, Telegram, web, and local edge clients interchangeable presentations of one assistant rather than separate bots with duplicated logic.
+Make Alice, Telegram, web, local edge clients, and the local voice speaker interchangeable presentations of one assistant rather than separate bots with duplicated logic.
 
 ## Normalized turn
 
@@ -35,6 +35,12 @@ The Telegram adapter supports text, voice transcripts, rich messages, callbacks,
 The aggregator bot is a new surface. Existing Calendar/Finance bots may continue to offer their specialized Telegram UX while sharing domain contracts.
 
 Rich final output has a concise visible summary plus expandable details. The logical answer is stored independently from Telegram markup.
+
+## Local speaker adapter
+
+The `openclaw-speaker` channel plugin (spec 140) receives transcripts from a paired home speaker and speaks `Answer.speech_text`, or `Answer.display_text` rendered for speech.
+
+Speaker turns have no platform deadline, so `deadline_at` may be empty; long work is acknowledged aloud and continues as a durable job delivered per spec 050.
 
 ## Cross-surface conversations
 
