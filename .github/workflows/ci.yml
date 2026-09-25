@@ -20,10 +20,24 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: gitleaks config is active (the tailnet-hostname rule must fire on a probe)
+        run: |
+          probe="$RUNNER_TEMP/gitleaks-probe"
+          mkdir -p "$probe"
+          # Built at run time so this workflow file does not itself contain a tailnet hostname.
+          printf 'http://probe.tail0a1b2c.%s:8123\n' ts.net > "$probe/probe.md"
+          # Leaks exit with 3, so an error (exit 1) is not mistaken for a detection.
+          rc=0
+          docker run --rm -v "$PWD:/repo:ro" -v "$probe:/probe:ro" "$GITLEAKS_IMAGE" \
+            dir --config /repo/.gitleaks.toml --exit-code 3 --redact --no-banner /probe || rc=$?
+          if [ "$rc" -ne 3 ]; then
+            echo "::error::the tailnet-hostname rule from .gitleaks.toml did not fire (exit $rc)"
+            exit 1
+          fi
       - name: gitleaks (full history)
-        run: docker run --rm -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" git --redact --no-banner /repo
+        run: docker run --rm -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" git --config /repo/.gitleaks.toml --redact --no-banner /repo
       - name: gitleaks (final tree, covers merge resolutions)
-        run: docker run --rm -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" dir --redact --no-banner /repo
+        run: docker run --rm -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" dir --config /repo/.gitleaks.toml --redact --no-banner /repo
   contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 10

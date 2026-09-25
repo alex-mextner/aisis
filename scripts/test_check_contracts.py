@@ -96,10 +96,19 @@ class CheckContractsTest(unittest.TestCase):
                            "## Answers and rendering\n\n~~~~text\n~~~python\n")
         self.assertFails(text, "python fence inside the ~~~~ fence")
 
+    def test_py_and_python3_languages_are_accepted(self):
+        text = self.mutate("~~~python\nclass AnswerAction", "~~~py\nclass AnswerAction")
+        text = self.mutate("~~~python\nRisk = ", "~~~python3\nRisk = ", text)
+        self.assertEqual(self.check_text(text), self.check_text(REAL))
+
+    def test_doc_without_python_blocks_fails(self):
+        self.assertFails("# Contracts\n\n~~~text\nnothing\n~~~\n", "no python contract blocks found")
+
     def test_python_fence_in_blockquote_or_list_fails(self):
-        for prefix in ("> ", "- ", "1. "):
-            with self.subTest(prefix=prefix):
-                text = self.mutate("~~~python\nclass AnswerAction", f"{prefix}~~~python\nclass AnswerAction")
+        for opener in ("> ~~~python", ">~~~python", ">> ~~~python", "- ~~~Python", "* ```python",
+                       "1. ~~~python", "2) ~~~py"):
+            with self.subTest(opener=opener):
+                text = self.mutate("~~~python\nclass AnswerAction", f"{opener}\nclass AnswerAction")
                 self.assertFails(text, "python fence inside a blockquote or list")
 
     def test_indented_fence_line_inside_block_does_not_close_it(self):

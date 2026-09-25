@@ -176,7 +176,9 @@ def is_discriminated_union(value: object) -> bool:
     )
 
 
-def build(path: Path, module: types.ModuleType, codes, defined: dict[str, int]) -> int:
+def build(
+    path: Path, module: types.ModuleType, codes: list[tuple[int, types.CodeType]], defined: dict[str, int]
+) -> int:
     """Run the blocks in module, check the required contracts, build every schema; return the model count."""
     try:
         from pydantic import BaseModel, TypeAdapter
