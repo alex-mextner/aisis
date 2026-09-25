@@ -6,6 +6,8 @@ Use OpenClaw background tasks, Task Flow, Automations, and Lobster approval/resu
 
 AISIS adds product-level metadata that links runtime tasks to a principal, originating surface, resource grants, and delivery preferences.
 
+The core record is a `RuntimeTaskBinding` (`docs/architecture/contracts.md`): principal, conversation, runtime and runtime task id, original request, and originating surface. Results are delivered to `DeliveryTarget`s, each naming the same principal.
+
 ## Lifecycle
 
 The product-level state maps onto runtime state and exposes at least:

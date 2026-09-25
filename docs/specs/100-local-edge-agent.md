@@ -12,7 +12,8 @@ Open Remote Commander is **already a Go implementation** with a Go MCP gateway/r
 
 The edge transport exposes user-approved capabilities such as:
 
-- filesystem and process access;
+- filesystem access within allowlisted roots;
+- generic process execution, only as a separately granted debugging capability (see Security);
 - local application/browser automation where supported;
 - private network/Tailnet resources;
 - installed agent harnesses (Codex, Claude Code, OMP);
@@ -39,7 +40,7 @@ Add a first-class ORC capability above generic `start_process`:
 - report final status/artifacts;
 - redact configured secret patterns.
 
-The generic process tools remain available for debugging but should not be the production harness contract.
+The generic process tools (`start_process` and similar) are not the production harness contract and are not model-callable by default. They exist for debugging only, under the grant described in Security.
 
 Harness jobs are default-deny outside an explicit opaque workspace binding. The central request includes principal, device, harness, and workspace identity; ORC resolves that workspace locally to an allowlisted canonical path. Model-provided text never becomes an unrestricted raw-shell command merely because a harness job was requested.
 
@@ -55,6 +56,8 @@ A chat/web setup link can download the correct installer, pair the device, and r
 
 Device keys are revocable and capability-scoped. Local credentials stay local when possible.
 
-Commands/actions remain subject to central policy and audit.
+Commands are allowlisted by capability; arbitrary shell execution is not a default capability. Generic process tools are exposed to the model only after the user enables them for one device as a scoped, time-limited, auditable grant (spec 020, Confirmation policy); the typed harness API above stays the only default path to local execution.
+
+Local actions have the same risk/confirmation policy as cloud tools, remain subject to central policy, and produce auditable receipts.
 
 The system never silently substitutes a different device for a device-scoped task.
