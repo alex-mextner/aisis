@@ -91,6 +91,30 @@ class CheckContractsTest(unittest.TestCase):
                            "## Answers and rendering\n\n```text\n~~~pyhton\n")
         self.assertFails(text, f":{line_of(text, '~~~pyhton')}: python fence inside the ``` fence")
 
+    def test_python_fence_swallowed_by_unbalanced_tilde_fence_fails(self):
+        text = self.mutate("## Answers and rendering\n\n~~~python\n",
+                           "## Answers and rendering\n\n~~~~text\n~~~python\n")
+        self.assertFails(text, "python fence inside the ~~~~ fence")
+
+    def test_python_fence_in_blockquote_or_list_fails(self):
+        for prefix in ("> ", "- ", "1. "):
+            with self.subTest(prefix=prefix):
+                text = self.mutate("~~~python\nclass AnswerAction", f"{prefix}~~~python\nclass AnswerAction")
+                self.assertFails(text, "python fence inside a blockquote or list")
+
+    def test_indented_fence_line_inside_block_does_not_close_it(self):
+        text = self.mutate("ExecutionId = str\n", 'ExecutionId = str\nFENCE_EXAMPLE = """\n    ~~~\n"""\n')
+        self.assertEqual(self.check_text(text), self.check_text(REAL))
+
+    def test_required_union_that_is_not_discriminated_fails(self):
+        text = self.mutate('    Field(discriminator="kind"),\n]\n\nclass ProductTurn',
+                           '    Field(description="any"),\n]\n\nclass ProductTurn')
+        self.assertFails(text, "not discriminated unions", "SurfaceContext")
+
+    def test_contracts_module_is_not_left_in_sys_modules(self):
+        cc.check()
+        self.assertNotIn("aisis_contracts", sys.modules)
+
     def test_discriminator_collision_fails(self):
         text = self.mutate('kind: Literal["web"] = "web"', 'kind: Literal["api"] = "api"')
         # SurfaceContext is built while its block runs (ProductTurn uses it there).

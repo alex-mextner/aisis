@@ -13,6 +13,7 @@ import re
 import sys
 import traceback
 import types
+import typing
 from pathlib import Path
 from typing import NamedTuple
 
@@ -30,6 +31,8 @@ REQUIRED_MODELS = (
 REQUIRED = UNIONS + REQUIRED_MODELS
 # Fence opener: ``` or ~~~ (3 or more), optional spaces, optional info string (first word = language).
 FENCE_OPEN = re.compile(r"^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})[ \t]*(?P<lang>[^`\s]*)(?P<rest>.*)$")
+# A python-looking fence behind a blockquote or list marker, which the checker would not see.
+PREFIXED_PY_FENCE = re.compile(r"^[ \t]*(?:>|[-*+][ \t]|\d+[.)][ \t])[ \t>]*(?:`{3,}|~{3,})[ \t]*py", re.I)
 PYTHON_LANGS = {"python", "py", "python3"}
 TYPE_ALIAS = getattr(ast, "TypeAlias", ())  # `type X = ...` (Python 3.12+)
 
@@ -69,6 +72,11 @@ def python_blocks(path: Path) -> list[Block]:
     while i < len(lines):
         m = fence_open(lines[i])
         if not m:
+            if PREFIXED_PY_FENCE.match(lines[i]):
+                raise CheckError(
+                    f"{at(path, i + 1)}: python fence inside a blockquote or list is not checked; "
+                    "contract blocks start at column 0"
+                )
             i += 1
             continue
         fence, lang, opened = m["fence"], m["lang"].lower(), i + 1
@@ -80,7 +88,8 @@ def python_blocks(path: Path) -> list[Block]:
             )
         if is_python and m["indent"]:
             raise CheckError(f"{at(path, opened)}: indented python fence; contract blocks start at column 0")
-        close = re.compile(rf"^[ \t]*{re.escape(fence[0])}{{{len(fence)},}}[ \t]*$")
+        # CommonMark: a closing fence is indented by at most 3 spaces.
+        close = re.compile(rf"^ {{0,3}}{re.escape(fence[0])}{{{len(fence)},}}[ \t]*$")
         j = i + 1
         while j < len(lines) and not close.match(lines[j]):
             inner = fence_open(lines[j])
@@ -145,13 +154,34 @@ def check(path: Path = CONTRACTS) -> str:
             defined[name] = line
         codes.append((block.start, compile(tree, str(path), "exec")))
 
+    module = types.ModuleType("aisis_contracts")
+    sys.modules[module.__name__] = module  # pydantic resolves annotations through the module
+    try:
+        n_models = build(path, module, codes, defined)
+    finally:
+        sys.modules.pop(module.__name__, None)
+    return (
+        f"ok: {len(blocks)} python blocks in {rel(path)}; {n_models} models and "
+        f"{len(UNIONS)} unions build; {len(REQUIRED)} required contracts present"
+    )
+
+
+def is_discriminated_union(value: object) -> bool:
+    """Annotated[A | B | ..., Field(discriminator=...)]"""
+    if typing.get_origin(value) is not typing.Annotated:
+        return False
+    inner, *metadata = typing.get_args(value)
+    return typing.get_origin(inner) in (typing.Union, types.UnionType) and any(
+        getattr(m, "discriminator", None) for m in metadata
+    )
+
+
+def build(path: Path, module: types.ModuleType, codes, defined: dict[str, int]) -> int:
+    """Run the blocks in module, check the required contracts, build every schema; return the model count."""
     try:
         from pydantic import BaseModel, TypeAdapter
     except ImportError:
         raise CheckError("pydantic v2 is required: pip install -r scripts/requirements-ci.txt") from None
-
-    module = types.ModuleType("aisis_contracts")
-    sys.modules[module.__name__] = module  # pydantic resolves annotations through the module
 
     def exec_block(code) -> None:
         exec(code, module.__dict__)
@@ -177,6 +207,12 @@ def check(path: Path = CONTRACTS) -> str:
             f"{at(path, defined.get(not_models[0]))}: required contracts are not pydantic models: "
             f"{', '.join(not_models)}"
         )
+    not_unions = [name for name in UNIONS if not is_discriminated_union(module.__dict__[name])]
+    if not_unions:
+        raise CheckError(
+            f"{at(path, defined.get(not_unions[0]))}: required contracts are not discriminated unions "
+            f"(Annotated[A | B, Field(discriminator=...)]): {', '.join(not_unions)}"
+        )
 
     models = [
         v for v in vars(module).values()
@@ -186,10 +222,7 @@ def check(path: Path = CONTRACTS) -> str:
         run(path, f"model {model.__name__}", defined.get(model.__name__), model.model_json_schema)
     for name in UNIONS:
         run(path, f"union {name}", defined.get(name), union_schema, module.__dict__[name])
-    return (
-        f"ok: {len(blocks)} python blocks in {rel(path)}; {len(models)} models and "
-        f"{len(UNIONS)} unions build; {len(REQUIRED)} required contracts present"
-    )
+    return len(models)
 
 
 def main() -> int:
