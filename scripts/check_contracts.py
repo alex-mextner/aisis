@@ -18,14 +18,16 @@ from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parent.parent
 CONTRACTS = ROOT / "docs" / "architecture" / "contracts.md"
+# Required contracts: discriminated unions that must build, and names that must be pydantic models.
 UNIONS = ("SurfaceContext", "DeliveryTarget")
-REQUIRED = (
+REQUIRED_MODELS = (
     "ExternalIdentity", "ResourceGrant",
-    "SurfaceContext", "ProductTurn", "ProductAnswer", "RenderedNumber",
+    "ProductTurn", "ProductAnswer", "RenderedNumber",
     "DomainToolSpec", "DomainToolResult", "RouteDecision", "RuntimeTaskBinding",
-    "DeliveryTarget", "RecipientResolution",
+    "RecipientResolution",
     "EdgeHarnessSpec", "EdgeExecutionRequest", "EdgeExecutionHandle",
 )
+REQUIRED = UNIONS + REQUIRED_MODELS
 # Fence opener: ``` or ~~~ (3 or more), optional spaces, optional info string (first word = language).
 FENCE_OPEN = re.compile(r"^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})[ \t]*(?P<lang>[^`\s]*)(?P<rest>.*)$")
 PYTHON_LANGS = {"python", "py", "python3"}
@@ -82,7 +84,7 @@ def python_blocks(path: Path) -> list[Block]:
         j = i + 1
         while j < len(lines) and not close.match(lines[j]):
             inner = fence_open(lines[j])
-            if not is_python and inner and inner["lang"].lower() in PYTHON_LANGS:
+            if not is_python and inner and inner["lang"].lower().startswith("py"):
                 raise CheckError(
                     f"{at(path, j + 1)}: python fence inside the {fence} fence opened at line {opened}; "
                     "an unbalanced fence would hide this block from the check"
@@ -165,6 +167,15 @@ def check(path: Path = CONTRACTS) -> str:
         raise CheckError(
             f"{rel(path)}: required contracts missing: {', '.join(missing)} "
             "(renamed, removed, or in a fence the checker skipped; update REQUIRED if intentional)"
+        )
+    not_models = [
+        name for name in REQUIRED_MODELS
+        if not (isinstance(module.__dict__[name], type) and issubclass(module.__dict__[name], BaseModel))
+    ]
+    if not_models:
+        raise CheckError(
+            f"{at(path, defined.get(not_models[0]))}: required contracts are not pydantic models: "
+            f"{', '.join(not_models)}"
         )
 
     models = [

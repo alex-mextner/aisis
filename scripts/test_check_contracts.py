@@ -86,9 +86,19 @@ class CheckContractsTest(unittest.TestCase):
         text = REAL.replace("RuntimeTaskBinding", "TaskBinding")
         self.assertFails(text, "required contracts missing: RuntimeTaskBinding")
 
+    def test_near_miss_fence_swallowed_by_unbalanced_fence_fails(self):
+        text = self.mutate("## Answers and rendering\n\n~~~python\n",
+                           "## Answers and rendering\n\n```text\n~~~pyhton\n")
+        self.assertFails(text, f":{line_of(text, '~~~pyhton')}: python fence inside the ``` fence")
+
     def test_discriminator_collision_fails(self):
         text = self.mutate('kind: Literal["web"] = "web"', 'kind: Literal["api"] = "api"')
-        self.assertFails(text, "mapped to multiple choices")
+        # SurfaceContext is built while its block runs (ProductTurn uses it there).
+        self.assertFails(text, f"block starting at line {line_of(text, 'class AliceContext')}")
+
+    def test_required_model_that_is_not_a_model_fails(self):
+        text = self.mutate("class ProductAnswer(BaseModel):", "class ProductAnswer(Protocol):")
+        self.assertFails(text, "required contracts are not pydantic models: ProductAnswer")
 
     def test_unresolvable_annotation_fails_on_model(self):
         text = self.mutate("    reasons: list[str]", '    reasons: list["Nope"]')

@@ -7,7 +7,8 @@ permissions:
   contents: read
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded PR runs are cancelled; every push to main keeps its own verdict.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   secret-scan:
     runs-on: ubuntu-latest
@@ -42,7 +43,14 @@ jobs:
         run: python3 scripts/check_contracts.py
       - name: contract checker tests
         run: python3 -m unittest discover -s scripts -p "test_*.py"
+  whitespace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Diffing the whole tree against the empty tree treats every tracked file as added,
       # so --check flags trailing whitespace anywhere, not only in this change.
-      - name: whitespace
+      - name: no trailing whitespace in any tracked file
         run: git diff --check "$(git hash-object -t tree /dev/null)" HEAD
