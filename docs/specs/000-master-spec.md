@@ -1,227 +1,222 @@
 # AISIS Master Spec
 
-**Status:** design specification  
-**Language of implementation:** English identifiers; Russian-first UX  
+**Status:** approved architecture, implementation-ready
+**Language:** English identifiers; Russian-first UX
 **Authority:** this document defines product boundaries. Subsystem specs refine it but must not contradict it.
 
 ## 1. Product intent
 
-AISIS is a continuously available personal AI assistant with permissioned access to personal digital resources. It should feel like one assistant even when the user talks through Alice, Telegram, a web UI, or a local computer agent.
+AISIS is a continuously available personal AI assistant with explicit, permissioned access to a person's digital resources. It should feel like one assistant across Alice, Telegram, web, calls, and local computer harnesses.
 
-The assistant handles four immediate domains: calendar, finance, home, and general questions. It also gains optional read/write access to Telegram, email, Notion, and Slack.
+The initial domains are calendar, finance, home, general questions, personal Telegram, email, Notion, and Slack. AISIS also supports long autonomous work, proactive monitoring, durable automations, self-learning, and visual workflow authoring.
 
-The system must support both fast conversational turns and long autonomous work. Long work may run for minutes or hours, expose progress, survive restarts, and deliver the result later.
+## 2. Runtime decision
 
-## 2. Existing systems are capabilities, not code to copy
+AISIS uses **OpenClaw as the primary central-agent runtime** rather than rebuilding session continuity, memory, model providers, harness integration, proactive heartbeat, background tasks, self-learning, channel routing, and automation from scratch.
 
-HyperCalendarBot remains the calendar source of truth and gains a surface-neutral adapter so Alice can use the same intent/tool engine as Telegram.
+AISIS is not a hard fork of OpenClaw by default. It is a public product repository containing OpenClaw plugins, domain adapters, shared libraries, configuration, tests, and git submodules for existing products.
 
-ExpenseSyncBot remains the finance source of truth. Its calculator semantics and regression corpus are reused by AISIS; currency and finance-specific behavior stays in ExpenseSyncBot.
+Hermes Agent remains an evaluated alternative/reference implementation. Its learning loop, Python/uv implementation, Home Assistant integration, cron/skills, and messaging gateway are useful references, but V1 targets OpenClaw because its current runtime already includes channel plugins, Codex/Claude runtimes, self-learning, durable automation/task-flow primitives, and typed resumable Lobster workflows.
 
-`dext0r/yandex_smart_home` remains responsible for native Alice Smart Home commands such as “включи свет”. AISIS does not replace or duplicate that path.
+AISIS-specific domain APIs remain runtime-neutral enough that a future Hermes adapter is possible without forcing a lowest-common-denominator runtime abstraction into V1.
 
-AISIS adds the inverse conversational path: Alice/Telegram → AISIS → Home Assistant for compound, contextual, analytical, and AI-assisted requests.
+## 3. Existing systems become first-class subrepositories
 
-## 3. High-level architecture
+HyperCalendarBot remains the calendar source of truth. It is included in the AISIS checkout as a git submodule and gains a stable authenticated API/tool surface. Telegram remains supported by HyperCalendarBot, while Alice and the AISIS aggregator use the same calendar logic through that API.
+
+ExpenseSyncBot remains the finance source of truth and is included as a git submodule. It gains a stable API/tool surface.
+
+VibeFlow remains its own repository and is included as a git submodule for the visual workflow editor/runtime. AISIS adds a shared Workflow IR and compilation/integration layer rather than replacing VibeFlow.
+
+Open Remote Commander (ORC, `alex-mextner/open-remote-commander`) remains its own public Go repository and is included as an integration submodule. It is the initial desktop/edge transport for private resources and local harness execution.
+
+`dext0r/yandex_smart_home` remains responsible for native Alice Smart Home commands such as “включи свет”. AISIS does not duplicate that path.
+
+## 4. High-level architecture
 
 ```mermaid
 flowchart LR
-  A[Alice] --> I[Ingress / Surface Adapters]
-  T[Telegram] --> I
-  W[Web/API] --> I
-  I --> C[Conversation Core]
-  C --> R[Router + Policy]
-  R --> D[Deterministic / Intent Paths]
-  R --> M[Model Gateway]
-  R --> J[Durable Jobs]
-  D --> X[Tool Registry]
-  M --> X
-  J --> X
-  X --> HC[HyperCalendarBot]
-  X --> EF[ExpenseSyncBot]
-  X --> HA[Home Assistant Adapter]
-  X --> PC[Personal Connectors]
-  E[Local Edge Agent] <--> C
-  E --> L[Codex / Claude Code / OMP]
-  E --> H[Private Tailnet / Local Resources]
-  J --> Y[Delivery Hub]
-  Y --> T
-  Y --> A
+  A[Alice channel plugin] --> OC[OpenClaw Gateway / main agent]
+  T[Telegram] --> OC
+  W[Web / Control UI] --> OC
+  C[Voice calls] --> OC
+
+  OC --> MEM[Memory + Self-learning]
+  OC --> AUTO[Automations + Heartbeat + Tasks]
+  OC --> ROUTE[Routing: deterministic / Laya / Jev]
+  OC --> TOOLS[AISIS tools/plugins]
+
+  TOOLS --> HC[HyperCalendarBot API]
+  TOOLS --> EF[ExpenseSyncBot API]
+  TOOLS --> HA[Home Assistant]
+  TOOLS --> PC[Telegram MTProto / Email / Notion / Slack]
+  TOOLS --> CALC[@aisis/calculator]
+
+  VF[VibeFlow visual editor] --> IR[AISIS Workflow IR]
+  IR --> LOB[Lobster / Task Flow]
+  IR --> VFR[VibeFlow native runtime]
+
+  OC --> EDGE[Open Remote Commander (ORC)]
+  EDGE --> HARNESS[Codex / Claude Code / OMP]
+  EDGE --> LOCAL[Local & Tailnet resources]
 ```
 
-## 4. Core components
+## 5. Deployment and tenancy
 
-**Ingress / Surface Adapters** normalize Alice, Telegram, web, and edge events into one `Turn` contract and map one `Answer` contract back to the surface.
+Development starts in **single-principal mode**: one trusted person, one OpenClaw workspace/runtime, multiple personal surfaces.
 
-**Conversation Core** owns conversation identity, context references, pending questions, active jobs, result recall, and cross-surface continuity.
+A public hosted Alice skill is a different trust model. Before catalog publication for unrelated users, AISIS must map each principal to an isolated OpenClaw workspace/runtime and isolated secrets. OpenClaw's convenient main session may be shared across one principal's channels, but never across unrelated principals.
 
-**Router + Policy** decides deterministic vs model vs long-job execution, chooses model tier and effort, and enforces read/write confirmation policy.
+OpenClaw multi-agent/workspace routing is useful orchestration, not by itself the security boundary for hostile multi-tenancy. Hosted mode must use process/container/storage isolation appropriate to the deployment.
 
-**Tool Registry** exposes domain and personal-resource capabilities through typed tool contracts. Tools never depend on a particular chat surface.
+## 6. OpenClaw responsibilities
 
-**Model Gateway** implements BYOK providers and local executors behind one protocol.
+OpenClaw owns the general agent loop, main-session continuity, model/provider integration, tool policy, agent harness routing, built-in memory, Skill Workshop/self-learning, automations, heartbeat, background tasks, Task Flow, delivery to supported channels, and generic approval primitives.
 
-**Job Orchestrator** runs long work durably, checkpoints progress, supports waiting for the user, and stores final artifacts/results.
+AISIS should extend these via public plugin/channel/tool interfaces before modifying OpenClaw core. Upstream patches are a last resort and should be small enough to upstream.
 
-**Delivery Hub** sends final/progress output to permitted surfaces and remembers delivery state.
+## 7. AISIS responsibilities
 
-**Identity & Resource Graph** links one person to Alice, Telegram, Google, Slack, Notion, email, edge devices, calendars, and delegated resources.
+AISIS owns:
+- Yandex Alice channel plugin and account-linking UX;
+- principal/resource linking across personal services;
+- domain APIs and adapters for calendar and finance;
+- Home Assistant conversational tools beyond native Yandex Smart Home;
+- reusable calculator/rendering library;
+- Telegram personal MTProto connector and fuzzy recipient resolver;
+- central voice/call capability, including Telegram P2P call transport;
+- local voice speaker surface on the home box (own wake word, VAD, STT; spec 140), an alternative to Alice that talks to the OpenClaw gateway;
+- VibeFlow integration and Workflow IR;
+- model-routing policy additions such as Laya/Jev;
+- setup UX, opinionated defaults, product tests, and cross-domain policies.
 
-## 5. Surfaces
+## 8. Proactivity and learning
 
-The initial surfaces are:
-- Alice Dialogs skill for the universal assistant and domain entry points.
-- Telegram aggregator bot plus existing domain bots.
-- Web configuration and authorization UI.
-- Local Edge Agent for private/local executors and resources.
-- Local voice speaker: self-hosted wake word, VAD and STT on the home box as an alternative to Alice (spec 140).
+AISIS uses OpenClaw automations for explicit one-shot/recurring work, heartbeat for ambient awareness, background tasks for detached work, and standing instructions/skills for persistent behavior.
 
-A surface is presentation and transport only. Business rules, tools, jobs, model routing, and memory live outside it.
+Self-learning is exposed through OpenClaw Skill Workshop. The initial AISIS default is conservative: learned procedures that can cause external writes are proposed for review before activation; users may enable autonomous maintenance for trusted skill classes.
 
-## 6. Conversation UX
+Proactive actions still respect resource ACLs, quiet hours, action risk classes, deduplication, and notification policy.
 
-Fast requests should normally answer within one turn. The router prefers deterministic intents and direct tools for calendar lookup, calculator, known home queries, and other predictable operations.
+## 9. Conversation and long work UX
 
-If work will exceed the surface budget, AISIS immediately acknowledges it and creates a `Job`. The user can ask “статус?”, “что с моим прошлым запросом?” or refer to it naturally.
+Fast deterministic/tool requests should complete synchronously when possible.
 
-When a completed job is encountered on a later Alice turn, the assistant should restore context: “Ты спрашивал … Ответ готов. Рассказать сейчас или позже?”
+Long work becomes a durable OpenClaw background task/Task Flow. The assistant immediately acknowledges it and supports natural status queries.
 
-Telegram can deliver completion automatically. Alice Dialogs cannot initiate a normal skill conversation, so proactive Station speech is a separate optional delivery adapter, not an assumption of the core.
+Telegram may receive proactive progress/final delivery.
 
-## 7. Alice constraints
+A standard Alice Dialogs webhook cannot stream a later continuation after the 4.5-second response deadline. AISIS therefore acknowledges and continues as background work.
 
-A Yandex Dialogs webhook must return the complete response within the platform deadline; AISIS does not attempt to stream an unfinished webhook response.
+If a long task **originated from Alice**, proactive delivery through the same configured Station is allowed and may speak the full result when the user has enabled this behavior. It is not restricted to a generic “ready” notification merely because the result is private. If the originating Station cannot be resolved or proactive speech is disabled, the result remains pending and can be requested on the next Alice turn.
 
-Alice has separate display and speech fields. AISIS therefore treats `display_text` and `speech_text` as distinct outputs everywhere, even on surfaces that currently use only one.
+## 10. Alice
 
-Alice account identity is not equivalent to secure speaker biometric identity. Voice recognition may be a UX hint if the platform ever exposes a useful signal, but it is not an authorization boundary.
+Alice is implemented as an OpenClaw channel plugin with a public HTTPS webhook, channel/session binding, pairing/account-link support, outbound structured response rendering, and display/TTS separation.
 
-## 8. Telegram UX
+`display_text` and `speech_text` remain separate first-class representations.
 
-The aggregator bot supports ordinary messages, voice input, status queries, durable jobs, and rich final answers.
+Alice voice recognition is not used as a security boundary. Cross-person calendar access is based on explicit delegation/ACL.
 
-For long answers the preferred transport is Telegram Rich Messages: short summary first, expandable/details content below, finalized as one rich message. Streaming draft APIs may be used for live progress when supported.
+## 11. Calendar
 
-A compatibility fallback must preserve one logical answer: concise Telegram message plus a canonical result page/artifact rather than arbitrary 4096-character chunk spam.
+HyperCalendarBot is modified to expose stable domain APIs; it is not merely wrapped without changes.
 
-## 9. Model strategy
+The same calendar engine handles Telegram and AISIS requests. The API must support agenda lookup, search, create/edit/delete, free/busy, invitations/sharing, reminders, Google account status, and surface-neutral intent execution.
 
-Models are configured by aliases, not hard-coded into product logic:
-- `fast` — low latency, low cost.
-- `balanced` — default complex conversational work.
-- `deep` — difficult reasoning, optionally GPT-6 Astra or another configured frontier model.
-- `background` — long jobs optimized for throughput/cost.
+## 12. Finance and calculator
 
-The initial fast default may use DeepSeek V4.1 Flash when the user has configured that provider.
+ExpenseSyncBot is modified to expose stable finance APIs.
 
-Route selection is pluggable. The policy chain is deterministic rules → optional local Laya → optional Jev decision model → conservative fallback.
+Generic calculator semantics are extracted into a reusable monorepo library `@aisis/calculator`. ExpenseSyncBot consumes that library rather than remaining the owner of generic arithmetic.
 
-The route decision may select both model alias and reasoning effort. Provider failures trigger explicit configured fallbacks, never silent uncontrolled provider switching.
+The rendering layer produces canonical value, display text, and speech text independently. Exact/simple rational results such as one third may display as `1/3` while speaking “одна треть”.
 
-## 10. BYOK and local executors
+## 13. Home Assistant
 
-Users can connect their own Hugging Face, OpenRouter, OpenAI, DeepSeek, and later other provider credentials through web setup or a chat-generated secure link.
+Native Alice smart-home exposure remains with `dext0r/yandex_smart_home`.
 
-A Local Edge Agent can expose installed Codex, Claude Code, and OMP sessions as long-running executors. The edge agent uses outbound authenticated connectivity and never requires an inbound public port.
+AISIS adds AI-assisted Home Assistant read/action tools for compound/contextual requests.
 
-The edge layer is a standalone signed binary for macOS and Windows; it must not assume Python is preinstalled.
+Home Assistant endpoints are runtime deployment configuration and are not committed to the public repository.
 
-## 11. Home Assistant
+AISIS supports both private Tailnet/local access and an authenticated HTTPS reverse-proxy profile. Private/local access remains preferable for high-trust operations when available.
 
-The user's current Home Assistant endpoint is private inside Tailscale. AISIS reaches it through a local edge connection or a colocated trusted worker; Home Assistant itself does not need to become a public Alice webhook.
+## 14. Calls
 
-The HA domain supports state queries, entity/area discovery, history, service calls, scenes/scripts, and compound plans. Writes are classified by risk and may require confirmation.
+Calls are a central AISIS capability, not a calendar subsystem.
 
-The existing native Yandex Smart Home integration remains the shortest path for direct device commands.
+The existing HyperCalendarBot Telegram P2P call stack is extracted/migrated behind a central call transport API. Calendar reminders become clients of the call service.
 
-## 12. Personal connectors
+OpenClaw's official voice-call plugin is reused for PSTN providers and its session/realtime/security patterns are reused for the central abstraction. Telegram P2P remains a separate transport because it uses MTProto/WebRTC rather than Twilio/Telnyx/Plivo.
 
-V1 optional connectors are Telegram personal account (MTProto), email, Notion, and Slack.
+Call reliability requires automated setup diagnostics, transport smoke tests, state-machine tests, STT/TTS tests, and real end-to-end test-account calls before being declared healthy.
 
-Each connector declares granular read/search/write capabilities and required scopes. A user can connect read-only access without enabling writes.
+## 15. Workflows / no-code
 
-Telegram MTProto supports recent-dialog lookup, recent-message search, recipient resolution, and sending. Recipient identity uses stable numeric peer identity; username is only a hint.
+Neither Hermes nor OpenClaw currently provides an n8n-style visual graph editor. OpenClaw provides strong execution primitives: Automations, Task Flow, Lobster typed workflows with approval/resume, hooks, and LLM Task.
 
-## 13. Memory and recipient resolution
+VibeFlow becomes the visual/no-code programming surface for AISIS.
 
-AISIS stores explicit user-approved aliases and interaction-derived non-sensitive routing signals such as recency/frequency of communication.
+AISIS defines a typed Workflow IR that VibeFlow can emit. Initial compilation/execution targets are:
+1. OpenClaw Lobster for deterministic typed pipelines with approval/resume;
+2. OpenClaw Task Flow/Automations for durable/background/scheduled execution;
+3. VibeFlow native executor for n8n-compatible nodes and graph features not representable in Lobster.
 
-Telegram recipient search combines exact IDs/usernames, normalized names, aliases, transliteration, fuzzy similarity, recent dialogs, reply frequency, mutual chats, and prior confirmed resolutions.
+The visual editor must show which target a workflow can compile to and why.
 
-A low-confidence or high-impact write must ask for confirmation instead of guessing the recipient.
+## 16. Models and routing
 
-## 14. Calculator and rendering
+OpenClaw provider/harness support is reused rather than duplicating a model gateway.
 
-AISIS reuses the tested ExpenseSyncBot calculator semantics: safe parsing, exact decimal arithmetic where required, operator precedence, percentages, and currency-aware expressions.
+AISIS adds an opinionated routing layer:
+- deterministic routing first;
+- optional local multilingual Laya;
+- optional Jev decision model;
+- static fallback.
 
-The generic calculator adds richer grammar and a canonical numeric representation. Rendering is a separate layer.
+Routing chooses model/provider/harness and reasoning effort separately.
 
-A result can therefore be:
-```json
-{"value":"0.333333333333333333","display_text":"1/3","speech_text":"одна треть","approximate":false}
-```
+Fast defaults may use DeepSeek V4.1 Flash. Hard tasks may route to configured frontier models or local/remote harnesses such as Codex, Claude Code, or OMP.
 
-Simple fractions are recovered only when mathematically justified within a strict tolerance and bounded denominator. Money is normally rendered as decimal currency, not fractions.
+## 17. Local computer access
 
-## 15. Long-running jobs
+V1 reuses the user's public Open Remote Commander (ORC) as the first edge/desktop transport for local files, terminals, and harness access.
 
-Every long operation becomes a durable `Job` with:
-- original user request and conversation reference;
-- selected executor/model route;
-- status and structured progress;
-- resumable checkpoints;
-- optional pending-user question;
-- final structured answer/artifacts;
-- delivery targets and delivery receipts.
+The long-term packaging target is a signed Go binary for macOS and Windows, avoiding Node/npx/Python prerequisites.
 
-Statuses are `queued | running | waiting_user | succeeded | failed | cancelled`.
+Harness selection is a central-server routing decision. The edge transport advertises available harnesses/capabilities; it does not decide which harness should receive a job.
 
-A job is idempotent where possible and has explicit cancellation and retry semantics.
+## 18. Personal connectors
 
-## 16. Security model
+V1 optional connectors include Telegram personal account (MTProto), email, Notion, and Slack.
 
-Secrets are encrypted at rest and referenced by secret IDs; tool calls and prompts never receive raw provider credentials.
+Telegram recipient resolution uses stable numeric peer identity; username/display name are hints. Ranking combines aliases, normalization, transliteration, fuzzy matching, recency, frequency, reply behavior, mutual-chat context, and prior confirmed resolutions.
 
-Local MTProto sessions and local-computer harness credentials should remain on the edge device by default.
+## 19. Repository and openness
 
-Resource permissions are capability-based and least-privilege. Read and write grants are separate.
+AISIS is public/open source.
 
-Destructive, financial, external-communication, and privacy-sensitive actions are logged and governed by configurable confirmation policy.
+The top-level repository includes HyperCalendarBot, ExpenseSyncBot, VibeFlow, and Open Remote Commander as git submodules so each project can still be developed, released, and deployed independently.
 
-Cross-person calendar or messaging access is allowed only by explicit ACL/delegation, never inferred from household proximity or voice.
+Secrets, local endpoints beyond intentionally documented examples, sessions, and user data are never committed.
 
-## 17. Observability and debugging
+## 20. Acceptance criteria
 
-Every turn receives a trace ID. The system records routing decisions, selected model alias/effort, tool calls, latency, token/cost metadata, job state transitions, and delivery receipts without logging secrets.
+A user can contact the same central assistant from Telegram and Alice and retain coherent identity/session behavior.
 
-A debug console can reconstruct “why did the assistant do this?” across surfaces and domain services.
+Calendar and finance behavior comes from their existing services through authenticated APIs.
 
-Users must be able to inspect active jobs and recent actions in Telegram and web UI.
+The calculator is a reusable shared package.
 
-## 18. Reliability targets
+A long task can outlive the initiating request, report status, and deliver later.
 
-Alice ingress reserves enough budget to render a valid response before the platform deadline; slow work is converted to a job before that budget is exhausted.
+The assistant can learn reusable procedures, perform scheduled/proactive work, and expose those behaviors for review/control.
 
-Fast deterministic paths should not invoke an LLM. Tool and provider timeouts are bounded and observable.
+A VibeFlow graph can compile to at least one durable AISIS/OpenClaw workflow target.
 
-The system must tolerate worker restart without losing jobs, pending results, resource links, or delivery state.
+Calendar reminders can request calls without importing calendar-owned call implementation.
 
-## 19. Scope ordering encoded by architecture
+Home Assistant compound requests work without replacing the existing Yandex Smart Home integration.
 
-The first usable vertical slice is identity + surfaces + durable jobs + calendar + calculator + provider routing.
-
-Home Assistant, finance orchestration, and personal connectors plug into the same contracts rather than creating parallel frameworks.
-
-Commerce/price lookup from the original product vision remains an intended domain, but is not allowed to distort V1 core contracts; it plugs in later as another tool provider.
-
-## 20. Acceptance criteria for this design
-
-A single user identity can be linked to Alice and Telegram and invoke the same conversation/tool core.
-
-“Что у меня сегодня?”, “посчитай…”, a compound HA request, and a general question route through the same interaction contract but to different tools/models.
-
-A long request creates a job, is queryable by status, finishes independently, auto-delivers to Telegram if enabled, and is recoverable on the next Alice turn.
-
-Existing HyperCalendarBot and ExpenseSyncBot remain operational independently while exposing reusable capability adapters.
-
-No core component depends on Telegram IDs, Alice request JSON, a specific model vendor, or direct public access to Home Assistant.
+Local Codex/Claude Code/OMP execution can be reached through an edge transport while harness choice remains central.

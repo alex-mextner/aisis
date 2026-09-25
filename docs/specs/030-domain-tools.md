@@ -26,7 +26,7 @@ It intentionally does not implement Yandex Smart Home device discovery/control b
 
 ## General questions
 
-General Q&A uses the model gateway plus explicitly enabled public-information tools. It has no implicit permission to query personal resources.
+General Q&A uses the OpenClaw model/runtime layer plus explicitly enabled public-information tools. It has no implicit permission to query personal resources.
 
 The router includes only relevant tool groups for each turn to reduce latency, context size, and accidental actions.
 
