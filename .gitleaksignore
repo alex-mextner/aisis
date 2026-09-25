@@ -1,5 +1,5 @@
 # Known history: a private tailnet hostname committed before the tailnet-hostname rule existed
 # and removed from the tree since. Removing it from history needs a history rewrite.
-0fc4a567fe44d02dc389d5db1a60b7abf346325a:specs/070-home-assistant-agent.md:tailnet-hostname:16
-3fe280f7af272ec296037b86fe97825f4fcd6850:specs/070-home-assistant-agent.md:tailnet-hostname:17
-0fc4a567fe44d02dc389d5db1a60b7abf346325a:specs/000-master-spec.md:tailnet-hostname:131
+0fc4a567fe44d02dc389d5db1a60b7abf346325a:docs/specs/070-home-assistant-agent.md:tailnet-hostname:16
+3fe280f7af272ec296037b86fe97825f4fcd6850:docs/specs/070-home-assistant-agent.md:tailnet-hostname:17
+0fc4a567fe44d02dc389d5db1a60b7abf346325a:docs/specs/000-master-spec.md:tailnet-hostname:131
