@@ -14,9 +14,11 @@ Short-lived setup links from Alice/Telegram preserve the originating principal/c
 
 ## Provider setup
 
-Users can add Hugging Face, OpenRouter, OpenAI, DeepSeek, and later other credentials.
+Provider setup is a simpler UX over OpenClaw's provider/SecretRef configuration (spec 040), not a parallel provider stack: credentials are stored and used by OpenClaw.
 
-The UI validates a key with a harmless provider-specific check, shows available models, allows alias mapping/fallback order, and shows spend/usage controls where available.
+Users can connect Hugging Face, OpenRouter, OpenAI, DeepSeek, and any other provider OpenClaw or an OpenClaw provider plugin supports.
+
+The UI validates a credential through OpenClaw's provider check where one exists, shows available models, maps them to the semantic aliases (`fast`, `balanced`, `deep`, `background`) with fallback order, and shows spend/usage controls where available.
 
 ## Resource setup
 
@@ -26,9 +28,9 @@ Home Assistant/MTProto can be marked “edge-owned”, making clear that credent
 
 ## Edge pairing
 
-A “Connect this computer” flow selects macOS/Windows, downloads the signed installer, and completes device pairing in the browser.
+A “Connect this computer” flow selects macOS/Windows, downloads the signed Open Remote Commander (ORC) installer, and completes device pairing in the browser (spec 100).
 
-The device page shows detected local executors and private connectors individually, with explicit enable/disable controls.
+The device page shows the harnesses ORC advertises and the private connectors individually, with explicit enable/disable controls. Generic process tools stay off unless the user grants them for that device (spec 100, Security).
 
 ## Jobs and debug
 
