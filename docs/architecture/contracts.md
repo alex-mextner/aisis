@@ -36,6 +36,8 @@ class ResourceGrant(BaseModel):
 
 OpenClaw channel plugins convert native channel events into OpenClaw messages first. AISIS uses the following product-level context only where a domain service needs cross-surface semantics.
 
+Every surface context carries `deadline_at`; `None` means the surface imposes no response deadline (spec 010, Deadlines). Alice always has one.
+
 ~~~python
 class AliceContext(BaseModel):
     kind: Literal["alice"] = "alice"
@@ -52,18 +54,22 @@ class TelegramContext(BaseModel):
     message_id: int | None
     thread_id: int | None = None
     is_group: bool = False
+    deadline_at: datetime | None = None
 
 class WebContext(BaseModel):
     kind: Literal["web"] = "web"
     session_id: str
+    deadline_at: datetime | None = None
 
 class ApiContext(BaseModel):
     kind: Literal["api"] = "api"
     client_id: str
+    deadline_at: datetime | None = None
 
 class EdgeContext(BaseModel):
     kind: Literal["edge"] = "edge"
     device_id: UUID
+    deadline_at: datetime | None = None
 
 class SpeakerContext(BaseModel):
     kind: Literal["speaker"] = "speaker"
@@ -205,23 +211,25 @@ class RuntimeTaskBinding(BaseModel):
 
 ## Delivery targets
 
+Every target names the principal it delivers for. Before delivering, the adapter checks that the target's chat or device binding still belongs to that principal and skips the target if it does not, as spec 050 describes for Stations and local speakers.
+
 ~~~python
-class TelegramDelivery(BaseModel):
+class DeliveryTargetBase(BaseModel):
+    principal_id: PrincipalId
+
+class TelegramDelivery(DeliveryTargetBase):
     kind: Literal["telegram"] = "telegram"
     chat_id: int
 
-class AlicePendingDelivery(BaseModel):
+class AlicePendingDelivery(DeliveryTargetBase):
     kind: Literal["alice_pending"] = "alice_pending"
-    principal_id: PrincipalId
 
-class StationTtsDelivery(BaseModel):
+class StationTtsDelivery(DeliveryTargetBase):
     kind: Literal["station_tts"] = "station_tts"
-    principal_id: PrincipalId
     station_binding_id: UUID
 
-class LocalSpeakerDelivery(BaseModel):
+class LocalSpeakerDelivery(DeliveryTargetBase):
     kind: Literal["local_speaker"] = "local_speaker"
-    principal_id: PrincipalId
     speaker_binding_id: UUID
 
 DeliveryTarget = Annotated[
@@ -262,12 +270,16 @@ class TelegramPersonalConnector(Protocol):
 ~~~python
 ExecutionId = str
 WorkspaceId = str
+# Optional parts of the harness execution extension (spec 100) a harness supports.
+HarnessFeature = Literal[
+    "progress_stream", "bounded_logs", "continuation", "cancel", "artifacts", "secret_redaction"
+]
 
 class EdgeHarnessSpec(BaseModel):
     name: HarnessName
     version: str
     device_id: UUID
-    supported_features: set[str]
+    supported_features: set[HarnessFeature]
 
 class EdgeExecutionRequest(BaseModel):
     principal_id: PrincipalId

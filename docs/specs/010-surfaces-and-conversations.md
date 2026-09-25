@@ -6,7 +6,7 @@ Make Alice, Telegram, web, local edge clients, and the local voice speaker inter
 
 ## Normalized turn
 
-Every inbound request becomes a `Turn` containing principal, conversation, surface context, text/input payload, locale, deadline, capabilities, and trace metadata.
+Channel plugins turn every inbound request into an OpenClaw message. Where a domain service needs cross-surface semantics, AISIS represents it as a `ProductTurn` (`docs/architecture/contracts.md`) containing principal, conversation, surface context (including `deadline_at`), text, locale, and trace metadata. Capabilities come from the principal's resource grants, not from the turn.
 
 Surface adapters may enrich a turn with transport facts, but domain tools cannot depend on transport SDK objects.
 
@@ -14,9 +14,9 @@ Surface adapters may enrich a turn with transport facts, but domain tools cannot
 
 The Alice adapter parses Yandex Dialogs request JSON and produces a turn with a hard response deadline.
 
-It maps `Answer.display_text` to Alice `response.text` and `Answer.speech_text` to `response.tts`.
+It maps `ProductAnswer.display_text` to Alice `response.text` and `ProductAnswer.speech_text` to `response.tts`.
 
-If a tool/model cannot safely finish inside the remaining budget, the adapter returns a short acknowledgement tied to a durable job.
+If a tool/model cannot safely finish inside the remaining budget, the adapter returns a short acknowledgement tied to an OpenClaw background task, which AISIS links to the principal with a `RuntimeTaskBinding` (spec 050).
 
 Buttons/deep links are generated from structured answer actions, including account-link and settings URLs.
 
@@ -38,15 +38,15 @@ Rich final output has a concise visible summary plus expandable details. The log
 
 ## Local speaker adapter
 
-The `openclaw-speaker` channel plugin (spec 140) receives transcripts from a paired home speaker and speaks `Answer.speech_text`, or `Answer.display_text` rendered for speech.
+The `openclaw-speaker` channel plugin (spec 140) receives transcripts from a paired home speaker and speaks `ProductAnswer.speech_text`, or `ProductAnswer.display_text` rendered for speech.
 
-Speaker turns have no platform deadline, so `deadline_at` may be empty; long work is acknowledged aloud and continues as a durable job delivered per spec 050.
+Speaker turns have no platform deadline, so `deadline_at` may be empty; long work is acknowledged aloud and continues as an OpenClaw background task delivered per spec 050.
 
 ## Cross-surface conversations
 
 A `Conversation` belongs to a principal, not to a chat platform. Each surface thread maps to a conversation scope.
 
-Users may explicitly continue a conversation from another surface. The system can also associate a completed job with the user globally so “что там с тем анализом?” works elsewhere.
+Users may explicitly continue a conversation from another surface. The system can also associate a completed background task with the principal globally through its `RuntimeTaskBinding` so “что там с тем анализом?” works elsewhere.
 
 Surface-private context such as a Telegram group must not silently leak into a private Alice response without an explicit context policy.
 
@@ -60,6 +60,6 @@ Optional Station TTS delivery is a separate adapter. Its default is privacy-safe
 
 ## Deadlines
 
-Each turn carries `deadline_at` or no deadline. The router receives the remaining budget and must not start a path whose p95 latency cannot fit.
+Each turn's surface context carries `deadline_at`; `None` means no deadline. The router receives the remaining budget and must not start a path whose p95 latency cannot fit.
 
-The surface adapter reserves a rendering/serialization safety margin and can force conversion to a job when budget becomes insufficient.
+The surface adapter reserves a rendering/serialization safety margin and can force conversion to a background task when budget becomes insufficient.
