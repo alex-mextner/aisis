@@ -51,15 +51,15 @@ flowchart LR
   TOOLS --> EF[ExpenseSyncBot API]
   TOOLS --> HA[Home Assistant]
   TOOLS --> PC[Telegram MTProto / Email / Notion / Slack]
-  TOOLS --> CALC[@aisis/calculator]
+  TOOLS --> CALC["@aisis/calculator"]
 
   VF[VibeFlow visual editor] --> IR[AISIS Workflow IR]
   IR --> LOB[Lobster / Task Flow]
   IR --> VFR[VibeFlow native runtime]
 
-  OC --> EDGE[Open Remote Commander (ORC)]
+  OC --> EDGE["Open Remote Commander (ORC)"]
   EDGE --> HARNESS[Codex / Claude Code / OMP]
-  EDGE --> LOCAL[Local & Tailnet resources]
+  EDGE --> LOCAL["Local & Tailnet resources"]
 ```
 
 ## 5. Deployment and tenancy

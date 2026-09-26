@@ -14,6 +14,12 @@ def line_of(text: str, needle: str) -> int:
     return text[: text.index(needle)].count("\n") + 1
 
 
+def block_start(text: str, needle: str) -> int:
+    """First content line of the python block that contains needle."""
+    fence = text.rindex("~~~python\n", 0, text.index(needle))
+    return text[:fence].count("\n") + 2
+
+
 class CheckContractsTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -137,7 +143,7 @@ class CheckContractsTest(unittest.TestCase):
     def test_discriminator_collision_fails(self):
         text = self.mutate('kind: Literal["web"] = "web"', 'kind: Literal["api"] = "api"')
         # SurfaceContext is built while its block runs (ProductTurn uses it there).
-        self.assertFails(text, f"block starting at line {line_of(text, 'class AliceContext')}")
+        self.assertFails(text, f"block starting at line {block_start(text, 'class AliceContext')}")
 
     def test_required_model_that_is_not_a_model_fails(self):
         text = self.mutate("class ProductAnswer(BaseModel):", "class ProductAnswer(Protocol):")

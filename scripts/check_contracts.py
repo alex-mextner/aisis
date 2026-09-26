@@ -20,11 +20,11 @@ from typing import NamedTuple
 ROOT = Path(__file__).resolve().parent.parent
 CONTRACTS = ROOT / "docs" / "architecture" / "contracts.md"
 # Required contracts: discriminated unions that must build, and names that must be pydantic models.
-UNIONS = ("SurfaceContext", "DeliveryTarget")
+UNIONS = ("SurfaceContext", "DeliveryTarget", "DomainToolResult")
 REQUIRED_MODELS = (
     "ExternalIdentity", "ResourceGrant",
     "ProductTurn", "ProductAnswer", "RenderedNumber",
-    "DomainToolSpec", "DomainToolResult", "RouteDecision", "RuntimeTaskBinding",
+    "DomainToolSpec", "RouteDecision", "RuntimeTaskBinding",
     "RecipientResolution",
     "EdgeHarnessSpec", "EdgeExecutionRequest", "EdgeExecutionHandle",
 )

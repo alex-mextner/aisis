@@ -41,39 +41,38 @@ OpenClaw channel plugins convert native channel events into OpenClaw messages fi
 Every surface context carries `deadline_at`; `None` means the surface imposes no response deadline (spec 010, Deadlines). Alice always has one.
 
 ~~~python
-class AliceContext(BaseModel):
+class SurfaceContextBase(BaseModel):
+    deadline_at: datetime | None = None
+
+class AliceContext(SurfaceContextBase):
     kind: Literal["alice"] = "alice"
     session_id: str
     yandex_user_id: str | None
     application_id: str
     has_screen: bool
-    deadline_at: datetime
+    deadline_at: datetime  # Alice always has a response deadline
 
-class TelegramContext(BaseModel):
+class TelegramContext(SurfaceContextBase):
     kind: Literal["telegram"] = "telegram"
     chat_id: int
     user_id: int
     message_id: int | None
     thread_id: int | None = None
     is_group: bool = False
-    deadline_at: datetime | None = None
 
-class WebContext(BaseModel):
+class WebContext(SurfaceContextBase):
     kind: Literal["web"] = "web"
     session_id: str
-    deadline_at: datetime | None = None
 
-class ApiContext(BaseModel):
+class ApiContext(SurfaceContextBase):
     kind: Literal["api"] = "api"
     client_id: str
-    deadline_at: datetime | None = None
 
-class EdgeContext(BaseModel):
+class EdgeContext(SurfaceContextBase):
     kind: Literal["edge"] = "edge"
     device_id: UUID
-    deadline_at: datetime | None = None
 
-class SpeakerContext(BaseModel):
+class SpeakerContext(SurfaceContextBase):
     kind: Literal["speaker"] = "speaker"
     device_id: UUID  # paired device; ProductTurn.principal_id comes from its binding
     room: str | None = None
@@ -83,7 +82,6 @@ class SpeakerContext(BaseModel):
     speaker_label: str | None = None
     wake_confidence: float | None = Field(default=None, ge=0, le=1)
     has_screen: bool = False
-    deadline_at: datetime | None = None
 
 SurfaceContext = Annotated[
     AliceContext | TelegramContext | WebContext | ApiContext | EdgeContext | SpeakerContext,
@@ -155,10 +153,15 @@ class DomainToolFailure(BaseModel):
     message: str
     retryable: bool
 
-class DomainToolResult(BaseModel):
-    ok: bool
+class DomainToolSuccess(BaseModel):
+    status: Literal["ok"] = "ok"
     value: object | None = None
-    failure: DomainToolFailure | None = None
+
+class DomainToolError(BaseModel):
+    status: Literal["error"] = "error"
+    failure: DomainToolFailure
+
+DomainToolResult = Annotated[DomainToolSuccess | DomainToolError, Field(discriminator="status")]
 
 class DomainToolProvider(Protocol):
     async def list_tools(self, principal_id: PrincipalId) -> list[DomainToolSpec]: ...
