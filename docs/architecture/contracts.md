@@ -297,9 +297,29 @@ class EdgeExecutionHandle(BaseModel):
     harness: HarnessName
     workspace_id: WorkspaceId
 
+ExecutionState = Literal["queued", "running", "waiting_user", "succeeded", "failed", "cancelled"]
+
+class EdgeExecutionStatus(BaseModel):
+    execution_id: ExecutionId
+    state: ExecutionState  # the spec 050 lifecycle
+    progress: str | None = None  # progress_stream
+    question: str | None = None  # set while waiting_user; answered through continuation
+    artifacts: list[str] = Field(default_factory=list)  # artifacts: ORC-side references
+
+# A method whose feature the harness does not advertise is not called. Status, progress and
+# logs are already redacted on the device when the harness advertises secret_redaction.
 class EdgeHarnessTransport(Protocol):
     async def discover(self, principal_id: PrincipalId) -> list[EdgeHarnessSpec]: ...
     async def start(self, request: EdgeExecutionRequest) -> EdgeExecutionHandle: ...
+    async def status(
+        self, principal_id: PrincipalId, execution_id: ExecutionId
+    ) -> EdgeExecutionStatus: ...
+    async def logs(  # bounded_logs: at most max_lines of the latest output
+        self, principal_id: PrincipalId, execution_id: ExecutionId, max_lines: int
+    ) -> list[str]: ...
+    async def answer(  # continuation
+        self, principal_id: PrincipalId, execution_id: ExecutionId, text: str
+    ) -> None: ...
     async def cancel(
         self, principal_id: PrincipalId, execution_id: ExecutionId
     ) -> None: ...
