@@ -53,6 +53,8 @@ jobs:
         with:
           persist-credentials: false
       # Diffing the whole tree against the empty tree treats every tracked file as added,
-      # so --check flags trailing whitespace anywhere, not only in this change.
-      - name: no trailing whitespace in any tracked file
+      # so --check flags whitespace errors anywhere, not only in this change: with the default
+      # core.whitespace that is trailing whitespace, a space before a tab in the indent, and
+      # blank lines at the end of a file.
+      - name: no whitespace errors (git diff --check) in any tracked file
         run: git diff --check "$(git hash-object -t tree /dev/null)" HEAD

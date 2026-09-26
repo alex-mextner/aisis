@@ -65,4 +65,4 @@ if ! jq -e 'any(.[]; .RuleID == "aws-access-token")' "$probe/report.json" > /dev
   echo "::error::default rule aws-access-token did not fire; is useDefault = true?" >&2
   exit 1
 fi
-echo "gitleaks probe ok: tailnet-hostname fired on ${#names[@]} names; default rules active"
+echo "gitleaks probe ok: tailnet-hostname fired $fired times on ${#names[@]} names; default rules active"

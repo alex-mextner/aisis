@@ -15,8 +15,11 @@ def line_of(text: str, needle: str) -> int:
 
 
 def block_start(text: str, needle: str) -> int:
-    """First content line of the python block that contains needle."""
-    fence = text.rindex("~~~python\n", 0, text.index(needle))
+    """First content line of the python block that contains needle (tilde or backtick fence)."""
+    end = text.index(needle)
+    fence = max(text.rfind("~~~python\n", 0, end), text.rfind("```python\n", 0, end))
+    if fence < 0:
+        raise AssertionError(f"no python fence before {needle!r}")
     return text[:fence].count("\n") + 2
 
 
