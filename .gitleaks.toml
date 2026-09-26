@@ -1,10 +1,12 @@
 # gitleaks configuration: the default rules plus private-endpoint rules, so the secret scan
 # also enforces spec 000 section 19 (no local endpoints committed to this public repository).
+# No allowlists here: exceptions are exact fingerprints in .gitleaksignore, and CI runs
+# scripts/gitleaks-probe.sh to prove these rules load and fire.
 [extend]
 useDefault = true
 
 [[rules]]
 id = "tailnet-hostname"
-description = "Tailscale MagicDNS name of a private tailnet (host, bare tailnet domain or wildcard)"
+description = "Tailscale MagicDNS name of a private tailnet (a host or the bare tailnet domain, also inside *.<tailnet>.ts.net)"
 regex = '''(?i)\b[a-z0-9-]+\.ts\.net\b'''
 keywords = ["ts.net"]
