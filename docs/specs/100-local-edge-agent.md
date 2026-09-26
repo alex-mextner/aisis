@@ -1,47 +1,63 @@
-# Local Edge Agent / Binder
+# Local Edge / Desktop Transport
 
-## Goal
+## V1 decision
 
-Provide a one-click bridge between AISIS and private/local capabilities on the user's computer without opening inbound ports.
+Reuse **Open Remote Commander (ORC)**, the public `alex-mextner/open-remote-commander` repository as the first AISIS desktop/edge transport.
 
-It enables local Codex, Claude Code, OMP, private Telegram MTProto sessions, Tailnet-only Home Assistant, and future local files/apps.
+Repository: https://github.com/alex-mextner/open-remote-commander
 
-## Packaging
+Open Remote Commander is **already a Go implementation** with a Go MCP gateway/relay, outbound Go device agent, pairing, device control, process/filesystem tools, and OAuth-introspection support. AISIS must extend it rather than start another binder.
 
-The edge agent is a standalone signed binary with installers for macOS and Windows.
+## Responsibilities
 
-It must not rely on a system Python installation. Python-based plugins, when needed, are managed inside the product rather than assumed from the OS.
+The edge transport exposes user-approved capabilities such as:
 
-## Pairing UX
+- filesystem access within allowlisted roots;
+- generic process execution, only as a separately granted debugging capability (see Security);
+- local application/browser automation where supported;
+- private network/Tailnet resources;
+- installed agent harnesses (Codex, Claude Code, OMP);
+- optional Telegram MTProto session ownership.
 
-The assistant can send a short-lived signed setup link.
+It maintains outbound authenticated connectivity and does not require arbitrary inbound ports on the user's computer.
 
-The installer opens a browser pairing flow, shows the device name and requested capability groups, and requires explicit user approval.
+## Harness selection
 
-After pairing, the edge agent maintains an outbound authenticated connection to AISIS.
+The desktop transport **advertises** installed harnesses, versions, supported capabilities, workspace roots, and current availability.
 
-## Executor discovery
+The central AISIS/OpenClaw runtime chooses the harness/model/effort. ORC is execution/transport plumbing, not the routing policy engine.
 
-The agent detects supported local executors such as `codex`, `claude`, and `omp`, reports capability/version metadata, and never uploads their credentials.
+## Harness execution extension
 
-Executions are represented as durable AISIS jobs with logs/progress filtered for secrets.
+Add a first-class ORC capability above generic `start_process`:
 
-## Private connectors
+- discover harnesses;
+- start a harness job with typed instruction/workspace/options;
+- return a stable execution id;
+- stream/read progress and bounded logs;
+- accept user answers/continuations;
+- cancel;
+- report final status/artifacts;
+- redact configured secret patterns.
 
-Home Assistant and Telegram MTProto can run as edge-owned connectors.
+The generic process tools (`start_process` and similar) are not the production harness contract and are not model-callable by default. They exist for debugging only, under the grant described in Security.
 
-The cloud sees typed tool results; private session keys and HA long-lived tokens can remain on the device.
+Harness jobs are default-deny outside an explicit opaque workspace binding. The central request includes principal, device, harness, and workspace identity; ORC resolves that workspace locally to an allowlisted canonical path. Model-provided text never becomes an unrestricted raw-shell command merely because a harness job was requested.
+
+## Packaging work
+
+Do **not** rewrite ORC in Go: it is already Go.
+
+The remaining distribution target is signed, low-friction installers and auto-update metadata for macOS and Windows, plus persistent service integration where appropriate. Installation must not require npx, Node, or Python.
+
+A chat/web setup link can download the correct installer, pair the device, and return to AISIS.
 
 ## Security
 
-Pairing keys are device-scoped and revocable.
+Device keys are revocable and capability-scoped. Local credentials stay local when possible.
 
-Commands are allowlisted by capability; arbitrary shell execution is not a default capability.
+Commands are allowlisted by capability; arbitrary shell execution is not a default capability. Generic process tools are exposed to the model only after the user enables them for one device as a scoped, time-limited, auditable grant (spec 020, Confirmation policy); the typed harness API above stays the only default path to local execution.
 
-Local actions have the same risk/confirmation policy as cloud tools and produce auditable receipts.
+Local actions have the same risk/confirmation policy as cloud tools, remain subject to central policy, and produce auditable receipts.
 
-## Offline behavior
-
-The cloud marks a device unavailable when the outbound channel is down and can keep a job queued or choose an explicitly configured cloud fallback.
-
-It never silently substitutes a different computer for a device-scoped action.
+The system never silently substitutes a different device for a device-scoped task.

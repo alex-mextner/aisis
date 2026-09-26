@@ -18,7 +18,7 @@ It does not reimplement domain logic. It selects and coordinates the appropriate
 
 “Напиши Лене, что опоздаю” → Telegram recipient resolution + send policy.
 
-“Разберись в этом проекте и вернись с выводами” → durable background job, potentially local Codex/Claude Code/OMP executor.
+“Разберись в этом проекте и вернись с выводами” → OpenClaw background task, potentially on a local Codex/Claude Code/OMP harness.
 
 ## Tool-group loading
 
@@ -38,7 +38,7 @@ Cross-domain writes are ordered and individually audited. A failure in one domai
 
 Surface adapters should not invent separate personalities for each bot.
 
-Domain bots may keep specialized command UX, but when routed through AISIS the assistant retains one conversation identity and can refer to prior turns/jobs with the correct scope.
+Domain bots may keep specialized command UX, but when routed through AISIS the assistant retains one conversation identity and can refer to prior turns and background tasks with the correct scope.
 
 ## General questions
 

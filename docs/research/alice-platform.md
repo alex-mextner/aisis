@@ -30,7 +30,7 @@ The public skill protocol should be designed around linked account identity and 
 
 It is useful reference code for the Alice → HA direction.
 
-For AISIS it is not the preferred production topology: the user's HA is private on Tailscale, while AISIS already needs a public multi-domain ingress. The Local Edge Agent can keep HA private and still expose typed HA tools.
+For AISIS it is not the preferred production topology: the user's HA is private on Tailscale, while AISIS already needs a public multi-domain ingress. The ORC edge/desktop transport (spec 100) can keep HA private and still expose typed HA tools.
 
 ## Sources
 

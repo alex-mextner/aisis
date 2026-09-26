@@ -2,11 +2,11 @@
 
 AISIS is a universal AI assistant with explicit, permissioned access to a person's digital resources.
 
-The product is not tied to one messenger, one model, or one automation platform. The same assistant can be reached from Alice, Telegram, the web UI, and local computer agents while reusing the same identity, conversations, tools, jobs, memory, and policy layer.
+The product is not tied to one messenger, one model, or one automation platform. The same assistant can be reached from Alice, Telegram, the web UI, a local voice speaker, and local computer agents while reusing the same identity, conversations, tools, jobs, memory, and policy layer.
 
 ## Product shape
 
-- **Surfaces:** Alice, Telegram, web/API, local edge agent.
+- **Surfaces:** Alice, Telegram, web/API, local edge agent, local voice speaker.
 - **Existing domain services:** HyperCalendarBot for calendar, ExpenseSyncBot for finance/calculator behavior.
 - **New domain service:** Home Assistant conversational agent, without replacing `dext0r/yandex_smart_home`.
 - **Personal connectors:** Telegram MTProto, email, Notion, Slack.
@@ -19,7 +19,7 @@ The authoritative product definition is [docs/specs/000-master-spec.md](docs/spe
 
 - `docs/specs/` — product and subsystem specifications.
 - `docs/architecture/contracts.md` — typed contracts and discriminated unions.
-- `docs/architecture/repo-layout.md` — repository boundaries and deployment shape.
+- `docs/architecture/repo-layout.md` — target (planned) repository layout, boundaries and deployment shape.
 - `docs/research/` — verified platform constraints and existing-system notes.
 
 ## Design principles

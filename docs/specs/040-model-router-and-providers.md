@@ -1,45 +1,65 @@
-# Model Router and Providers
+# Model Routing and Providers
 
-## Provider neutrality
+## Runtime ownership
 
-AISIS never makes a product feature depend on one vendor model identifier.
+OpenClaw owns provider clients, provider credentials, model sessions, CLI/harness runtimes, health/fallback mechanics that it already implements.
 
-Users connect providers through BYOK credentials and map models into semantic aliases: `fast`, `balanced`, `deep`, and `background`.
+AISIS does **not** maintain a parallel Hugging Face/OpenRouter/OpenAI/DeepSeek client stack merely to normalize providers a second time.
 
-## Initial provider adapters
+When a provider is missing from OpenClaw, prefer an OpenClaw provider plugin. A direct AISIS provider adapter is a compatibility escape hatch, not the default architecture.
 
-The first provider set is Hugging Face, OpenRouter, OpenAI, and DeepSeek direct.
+## User configuration
 
-Additional OpenAI-compatible providers can reuse a transport adapter when their semantics match; vendor-specific features remain explicit extensions.
+Users connect their own providers through OpenClaw/AISIS setup and map concrete model references to semantic aliases:
 
-Local executors Codex, Claude Code, and OMP are reached through the Local Edge Agent.
+- `fast` — low-latency routing, extraction, small answers;
+- `balanced` — normal conversational reasoning;
+- `deep` — difficult reasoning;
+- `background` — long-running throughput/cost-optimized work.
+
+AISIS web/chat setup may provide a simpler UX over OpenClaw's underlying provider/SecretRef configuration.
 
 ## Route decision
 
-A `RouteDecision` includes execution kind, model alias, reasoning effort, allowed tool groups, context budget, time budget, and fallback chain.
+AISIS adds an opinionated `RouteDecision` ahead of model execution. It may choose:
+
+- deterministic/tool-only execution;
+- OpenClaw model alias/reference;
+- OpenClaw CLI/harness backend such as Codex or Claude;
+- remote harness capability advertised through Open Remote Commander (ORC);
+- reasoning effort;
+- relevant tool groups;
+- synchronous vs background execution.
 
 The routing chain is:
+
 1. deterministic intent/tool rules;
-2. optional local Laya decision model;
-3. optional Jev decision provider;
+2. optional local multilingual Laya;
+3. optional Jev decision model;
 4. conservative static fallback.
 
-Laya and Jev implement the same `RouteDecisionProvider` protocol and can be A/B tested.
+For Russian routing, use the multilingual Laya checkpoint and preload it when local routing is enabled. Jev is optional; loss of Jev never blocks the static/deterministic fallback.
 
 ## Effort
 
-Reasoning effort is independent from model identity. Canonical effort levels are `none | low | medium | high | xhigh | max`; adapters map unsupported values to the nearest safe supported value.
+Reasoning effort is a separate routing dimension from model identity. Canonical AISIS levels are `none | low | medium | high | xhigh | max`.
 
-The router should choose the minimum tier/effort that satisfies the task and deadline, then escalate on explicit uncertainty/failure signals.
+The OpenClaw provider/harness adapter maps a canonical effort to what the selected backend actually supports. Unsupported effort levels degrade explicitly rather than silently changing model class.
 
-## Fast and deep examples
+## Examples
 
-A configured DeepSeek V4.1 Flash can serve the `fast` alias.
+A configured DeepSeek V4.1 Flash endpoint may back `fast`.
 
-A configured GPT-6 Astra can serve `deep` for difficult work; another model may replace it without changing callers.
+A configured frontier model may back `deep`.
 
-## User controls
+A repository-analysis request may bypass ordinary chat models and route to Codex/Claude/OMP through an available local or remote harness.
 
-Web/chat settings let the user add keys, test them, choose default aliases, cap spend, set fallback order, and disable providers.
+These are configuration examples, not hard-coded product dependencies.
 
-Provider health, rate limits, latency, and cost are observed and fed into routing without exposing secrets.
+## Health and fallback
+
+OpenClaw's provider/runtime health is the execution source of truth.
+
+AISIS routing can incorporate recent latency, quota/rate-limit state, cost policy, and capability availability, but must not create an independent hidden retry tree that disagrees with OpenClaw.
+
+The chosen route and any fallback are observable in traces without exposing credentials.

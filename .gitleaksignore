@@ -1,0 +1,9 @@
+# Known history: a private tailnet hostname committed before the tailnet-hostname rule existed
+# and removed from the tree since. Removing it from history needs a history rewrite.
+# 3fe280f is on main. 0fc4a56 exists only on unmerged branches, this PR's included. Rewriting that
+# history (a rebase or force-push of the branch, or a rebase merge) gives it a new id, and these
+# lines must then be regenerated from `gitleaks git --report-format json`. After a squash merge
+# (gh ship's default) the two 0fc4a56 lines only matter while such a branch still exists.
+0fc4a567fe44d02dc389d5db1a60b7abf346325a:docs/specs/070-home-assistant-agent.md:tailnet-hostname:16
+3fe280f7af272ec296037b86fe97825f4fcd6850:docs/specs/070-home-assistant-agent.md:tailnet-hostname:17
+0fc4a567fe44d02dc389d5db1a60b7abf346325a:docs/specs/000-master-spec.md:tailnet-hostname:131
