@@ -2,9 +2,10 @@
 # Proves that .gitleaks.toml loads and its rules fire: scans a throwaway directory holding random
 # tailnet names of several shapes and a random AWS-style key, and requires a tailnet-hostname
 # finding for every name plus the default aws-access-token rule. Exceptions belong in
-# .gitleaksignore (exact fingerprints), so .gitleaks.toml may not declare an allowlist.
-# The config itself is reviewed code: this catches a config that does not load, or a rule narrowed
-# or allowlisted by mistake, not a deliberately weakened config together with this script.
+# .gitleaksignore (exact fingerprints), so .gitleaks.toml may not declare an allowlist or disable
+# default rules. The config itself is reviewed code: this catches a config that does not load, or
+# a rule narrowed, allowlisted or disabled by mistake, not a deliberately weakened config together
+# with this script.
 #
 # Usage: scripts/gitleaks-probe.sh <gitleaks image> [repository directory, default .]
 set -euo pipefail
@@ -12,8 +13,10 @@ set -euo pipefail
 image=$1
 repo=$(cd "${2:-.}" && pwd)
 
-if grep -qiE '^[[:space:]]*\[+[[:space:]]*([a-z]+\.)*allowlists?[[:space:]]*\]+' "$repo/.gitleaks.toml"; then
-  echo "::error::.gitleaks.toml declares an allowlist; add exceptions to .gitleaksignore instead" >&2
+# Any allowlist (table, array of tables or inline key, global or per rule) and any disabled default
+# rule is refused: outside comments, the words may not appear in the config at all.
+if grep -vE '^[[:space:]]*#' "$repo/.gitleaks.toml" | grep -qiE 'allowlist|disabledrules'; then
+  echo "::error::.gitleaks.toml declares an allowlist or disables rules; add exceptions to .gitleaksignore instead" >&2
   exit 1
 fi
 
@@ -28,9 +31,13 @@ names=(
   "tail$(hex 3).$suffix"                  # bare tailnet domain
   "nas-$(hex 2).$(hex 3)-$(hex 2).$suffix" # host in a custom tailnet name
 )
+# 16 characters of the base32 alphabet the default aws-access-token rule expects. Only openssl,
+# tr and cut (all on stock macOS and Linux), and no reader that exits early under pipefail.
+key=$(openssl rand -base64 96 | LC_ALL=C tr -dc 'A-Z2-7' | cut -c1-16)
+[ "${#key}" -eq 16 ] || { echo "::error::could not generate a probe key" >&2; exit 1; }
 {
   for name in "${names[@]}"; do printf 'http://%s:8123\n' "$name"; done
-  printf 'aws_access_key_id = AKIA%s\n' "$(openssl rand 10 | base32)"
+  printf 'aws_access_key_id = AKIA%s\n' "$key"
 } > "$probe/docs/specs/probe.md"
 
 # Leaks exit with 3, so a gitleaks error (1) or a docker failure (125 and up) is told apart.

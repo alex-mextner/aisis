@@ -23,9 +23,9 @@ jobs:
       - name: gitleaks config is active (custom and default rules must fire on a probe)
         run: bash scripts/gitleaks-probe.sh "$GITLEAKS_IMAGE"
       - name: gitleaks (full history)
-        run: docker run --rm -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" git --config /repo/.gitleaks.toml --redact --no-banner /repo
+        run: docker run --rm -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" git --config /repo/.gitleaks.toml --gitleaks-ignore-path /repo/.gitleaksignore --redact --no-banner /repo
       - name: gitleaks (final tree, covers merge resolutions)
-        run: docker run --rm -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" dir --config /repo/.gitleaks.toml --redact --no-banner /repo
+        run: docker run --rm -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" dir --config /repo/.gitleaks.toml --gitleaks-ignore-path /repo/.gitleaksignore --redact --no-banner /repo
   contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 10
