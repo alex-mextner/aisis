@@ -109,6 +109,11 @@ class CheckContractsTest(unittest.TestCase):
     def test_doc_without_python_blocks_fails(self):
         self.assertFails("# Contracts\n\n~~~text\nnothing\n~~~\n", "no python contract blocks found")
 
+    def test_prefixed_python_fence_swallowed_by_unbalanced_fence_fails(self):
+        text = self.mutate("## Answers and rendering\n\n~~~python\n",
+                           "## Answers and rendering\n\n```text\n> ~~~python\n")
+        self.assertFails(text, f":{line_of(text, '> ~~~python')}: python fence inside the ``` fence")
+
     def test_python_fence_in_blockquote_or_list_fails(self):
         for opener in ("> ~~~python", ">~~~python", ">> ~~~python", "- ~~~Python", "* ```python",
                        "1. ~~~python", "2) ~~~py", "> - ~~~python", "> 1. ~~~python", "- - ~~~python"):

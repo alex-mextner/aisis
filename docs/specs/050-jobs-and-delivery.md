@@ -8,6 +8,8 @@ AISIS adds product-level metadata that links runtime tasks to a principal, origi
 
 The core record is a `RuntimeTaskBinding` (`docs/architecture/contracts.md`): principal, conversation, runtime and runtime task id, original request, and originating surface. Results are delivered to `DeliveryTarget`s, each naming the same principal.
 
+`RuntimeTaskBinding.runtime` names the executor: `openclaw_task` (an OpenClaw background task or Task Flow), `openclaw_automation`, `lobster`, or `vibeflow` (the VibeFlow native executor for workflows Lobster cannot represent, spec 045).
+
 ## Lifecycle
 
 The product-level state maps onto runtime state and exposes at least:

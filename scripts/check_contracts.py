@@ -98,7 +98,9 @@ def python_blocks(path: Path) -> list[Block]:
         while j < len(lines) and not close.match(lines[j]):
             inner = fence_open(lines[j])
             # Deliberately broad (any py* language): better a loud false alarm than a hidden block.
-            if not is_python and inner and inner["lang"].lower().startswith("py"):
+            if not is_python and (
+                (inner and inner["lang"].lower().startswith("py")) or PREFIXED_PY_FENCE.match(lines[j])
+            ):
                 raise CheckError(
                     f"{at(path, j + 1)}: python fence inside the {fence} fence opened at line {opened}; "
                     "an unbalanced fence would hide this block from the check"
