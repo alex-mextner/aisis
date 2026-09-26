@@ -56,7 +56,7 @@ def rel(path: Path) -> str:
 
 
 def at(path: Path, line: int | None) -> str:
-    return f"{rel(path)}:{line}" if line else rel(path)
+    return f"{rel(path)}:{line}" if line is not None else rel(path)
 
 
 def fence_open(line: str) -> re.Match | None:

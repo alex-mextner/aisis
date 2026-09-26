@@ -4,6 +4,8 @@ These are **language-neutral schema sketches rendered in Python syntax** for rea
 
 They define AISIS-owned boundaries only. They do **not** redefine OpenClaw's provider, session, task, or plugin runtime APIs.
 
+Field convention: `x: T | None` with no default is required but nullable: the surface adapter always sets it, to `None` when the platform has no value (for example Alice's `yandex_user_id` for a user who is not logged in). `x: T | None = None` may be omitted.
+
 ## Identity and resource grants
 
 ~~~python
