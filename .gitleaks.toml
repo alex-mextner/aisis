@@ -5,6 +5,6 @@ useDefault = true
 
 [[rules]]
 id = "tailnet-hostname"
-description = "Tailscale MagicDNS hostname of a private tailnet"
-regex = '''(?i)\b[a-z0-9-]+\.[a-z0-9-]+\.ts\.net\b'''
+description = "Tailscale MagicDNS name of a private tailnet (host, bare tailnet domain or wildcard)"
+regex = '''(?i)\b[a-z0-9-]+\.ts\.net\b'''
 keywords = ["ts.net"]

@@ -20,20 +20,31 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: gitleaks config is active (the tailnet-hostname rule must fire on a probe)
+      - name: gitleaks config is active (custom and default rules must fire on a probe)
         run: |
           probe="$RUNNER_TEMP/gitleaks-probe"
-          mkdir -p "$probe"
-          # Built at run time so this workflow file does not itself contain a tailnet hostname.
-          printf 'http://probe.tail0a1b2c.%s:8123\n' ts.net > "$probe/probe.md"
-          # Leaks exit with 3, so an error (exit 1) is not mistaken for a detection.
+          mkdir -p "$probe/docs/specs"
+          # Random values generated at run time: this file contains no hostname or key, and a
+          # rule narrowed to one fixed probe value, or a docs/ path allowlist, would not pass.
+          printf -v host 'p%s.tail%s.%s' "$(openssl rand -hex 4)" "$(openssl rand -hex 3)" ts.net
+          key="AKIA$(LC_ALL=C tr -dc 'A-Z2-7' < /dev/urandom | head -c 16)"
+          printf 'http://%s:8123\naws_access_key_id = %s\n' "$host" "$key" > "$probe/docs/specs/probe.md"
+          # Leaks exit with 3, so a gitleaks error (1) or a docker failure (125+) is told apart.
           rc=0
-          docker run --rm -v "$PWD:/repo:ro" -v "$probe:/probe:ro" "$GITLEAKS_IMAGE" \
-            dir --config /repo/.gitleaks.toml --exit-code 3 --redact --no-banner /probe || rc=$?
-          if [ "$rc" -ne 3 ]; then
-            echo "::error::the tailnet-hostname rule from .gitleaks.toml did not fire (exit $rc)"
-            exit 1
-          fi
+          docker run --rm -v "$PWD:/repo:ro" -v "$probe:/probe" "$GITLEAKS_IMAGE" \
+            dir --config /repo/.gitleaks.toml --exit-code 3 --redact --no-banner \
+            --report-format json --report-path /probe/report.json /probe/docs || rc=$?
+          case "$rc" in
+            3) ;;
+            0) echo "::error::gitleaks found nothing in the probe: .gitleaks.toml rules are not active"; exit 1 ;;
+            1) echo "::error::gitleaks failed on the probe (config or runtime error, see the log)"; exit 1 ;;
+            *) echo "::error::docker could not run gitleaks (exit $rc)"; exit 1 ;;
+          esac
+          # The custom rule and a default rule (useDefault = true) must both be active.
+          for rule in tailnet-hostname aws-access-token; do
+            jq -e --arg r "$rule" 'any(.[]; .RuleID == $r)' "$probe/report.json" > /dev/null \
+              || { echo "::error::gitleaks rule $rule did not fire on the probe"; exit 1; }
+          done
       - name: gitleaks (full history)
         run: docker run --rm -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" git --config /repo/.gitleaks.toml --redact --no-banner /repo
       - name: gitleaks (final tree, covers merge resolutions)
