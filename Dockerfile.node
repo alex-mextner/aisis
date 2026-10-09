@@ -1,0 +1,17 @@
+# Node.js/Bun application container
+FROM oven/bun:latest
+
+# Create app directory
+WORKDIR /app
+
+# Copy package and credentials files
+COPY package.json bun.lock* credentials.json .env ./
+
+# Install dependencies
+RUN bun install
+
+# Copy application code
+COPY scripts/ ./scripts/
+COPY tsconfig.json ./
+
+CMD ["bun", "scripts/call-and-record.ts"]

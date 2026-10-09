@@ -1,0 +1,26 @@
+# Asterisk-only container
+FROM debian:bullseye-slim
+
+# Install only Asterisk and essential dependencies
+RUN apt-get update && apt-get install -y \
+    asterisk \
+    asterisk-core-sounds-en \
+    asterisk-core-sounds-en-wav \
+    asterisk-modules \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Asterisk configuration
+COPY asterisk.d/ /etc/asterisk/
+
+# Create Asterisk directories with proper permissions
+RUN mkdir -p /var/lib/asterisk /var/log/asterisk /var/spool/asterisk/recording /var/run/asterisk \
+    && useradd -r -s /bin/false asterisk || true \
+    && chown -R asterisk:asterisk /var/lib/asterisk /var/log/asterisk /var/spool/asterisk /var/run/asterisk \
+    && chmod 755 /var/spool/asterisk/recording
+
+# Expose Asterisk ports
+EXPOSE 5060/udp 5060/tcp 8088/tcp
+
+# Start Asterisk
+CMD ["/usr/sbin/asterisk", "-f", "-vvv"]

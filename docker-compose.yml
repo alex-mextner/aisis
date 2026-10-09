@@ -1,0 +1,36 @@
+version: "3.8"
+
+services:
+  asterisk:
+    build:
+      context: .
+      dockerfile: Dockerfile.asterisk
+    network_mode: host
+    volumes:
+      - ./recordings:/var/spool/asterisk/recording
+      - ./asterisk.d:/etc/asterisk
+      - ./logs:/var/log/asterisk
+    restart: unless-stopped
+
+  # Node.js application service
+  node:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    network_mode: host
+    volumes:
+      - ./recordings:/var/spool/asterisk/recording
+      - ./scripts:/app/scripts
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - asterisk
+
+networks:
+  asterisk-net:
+    driver: bridge
+
+volumes:
+  recordings:
+  logs:
