@@ -12,13 +12,13 @@ import shutil
 from aiohttp import web
 
 from aiohttp.test_utils import TestClient, TestServer
-from adapter import Adapter, ERROR_REPLY, run_command
+from adapter import Adapter, ERROR_REPLY, NO_SPEECH_REPLY, run_command
 
 
 class AdapterTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.app = Adapter({"AISIS_STATE_DB": self.tmp.name + "/state.db"})
+        self.app = Adapter({"AISIS_STATE_DB": self.tmp.name + "/state.db", "AISIS_ALLOWED_STATIONS": "a,b"})
         self.client = TestClient(TestServer(self.app.app()))
         await self.client.start_server()
 
@@ -33,6 +33,31 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         result = await ws.receive_json(timeout=3)
         await ws.close()
         return result
+
+    async def test_unconfigured_station_allowlist_fails_before_opening_state(self):
+        for value in ("", " , ", "\t"):
+            with self.subTest(value=value):
+                path = self.tmp.name + "/unconfigured.db"
+                with self.assertRaisesRegex(ValueError, "AISIS_ALLOWED_STATIONS"):
+                    Adapter({"AISIS_STATE_DB": path, "AISIS_ALLOWED_STATIONS": value})
+                self.assertFalse(Path(path).exists())
+
+    async def test_empty_recognition_asks_to_repeat_without_chatgpt_or_turn_record(self):
+        async def turn(*args):
+            self.fail("Empty recognition reached ChatGPT")
+        self.app.turn = turn
+        response = await self.request("a", "  ")
+        self.assertEqual(response["data"]["text"], NO_SPEECH_REPLY)
+        self.assertTrue(response["data"]["finished"])
+        self.assertEqual(self.app.store.db.execute("SELECT count(*) FROM turns").fetchone()[0], 0)
+
+    async def test_unknown_station_never_calls_chatgpt(self):
+        async def turn(*args):
+            self.fail("Unknown station reached ChatGPT")
+        self.app.turn = turn
+        response = await self.request("not-allowed")
+        self.assertEqual(response["data"]["text"], ERROR_REPLY)
+        self.assertEqual(self.app.store.db.execute("SELECT count(*) FROM turns").fetchone()[0], 0)
 
     async def test_missing_identity_never_calls_chatgpt(self):
         called = False

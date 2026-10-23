@@ -160,7 +160,7 @@ async function socketFixture (reply: boolean) {
     if (reply) setTimeout(() => client.send(JSON.stringify({ text: 'wire final', end_of_utt: true })), 10)
   }))
   const session = await new GigaAMSTTBackend(`ws://127.0.0.1:${(server.address() as any).port}`).startTranscribing()
-  return { session, controls: () => controls, close: async () => { session.close(); server.close(); await once(server, 'close') } }
+  return { session, controls: () => controls, vadFinal: () => { for (const client of server.clients) client.send(JSON.stringify({ text: 'VAD final', end_of_utt: true })) }, close: async () => { session.close(); server.close(); await once(server, 'close') } }
 }
 
 test('actual GigaAM websocket finish sends one EOF and waits for final JSON', async () => {
@@ -186,5 +186,30 @@ test('actual GigaAM websocket cancel rejects final wait instead of emitting a re
     f.session.close()
     await waiting
     assert.deepEqual(results, [])
+  } finally { await f.close() }
+})
+
+test('actual GigaAM native EOF rejects an incomplete Ogg transport page before ASR finish', async () => {
+  const f = await socketFixture(false)
+  try {
+    await f.session.transcribeChunk(Buffer.from('OggS'))
+    await assert.rejects(f.session.finish(), /Truncated Ogg page/)
+    assert.equal(f.controls(), 0)
+  } finally { await f.close() }
+})
+
+
+test('actual GigaAM VAD final wins over a partial next Ogg page without sending native EOF', async () => {
+  const f = await socketFixture(false)
+  const results: any[] = []
+  f.session.setCallback(value => results.push(value))
+  try {
+    // The next transport page is incomplete when the recognizer ends speech.
+    await f.session.transcribeChunk(Buffer.from('OggS'))
+    f.vadFinal()
+    await until(() => results.length === 1)
+    await Promise.all([f.session.finish(), f.session.finish()])
+    assert.deepEqual(results, [{ text: 'VAD final', endOfUtt: true }])
+    assert.equal(f.controls(), 0)
   } finally { await f.close() }
 })

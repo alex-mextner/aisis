@@ -8,6 +8,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 HERE = Path(__file__).parent
 spec = importlib.util.spec_from_file_location('dns_forwarder', HERE / 'dns_forwarder.py')
@@ -72,9 +73,24 @@ class ScopeTests(unittest.TestCase):
         for upstream in ['192.0.2.56','127.0.0.53']:
             bad=dict(self.cfg,upstreams=[upstream])
             with self.assertRaises(ValueError):mod.validate_config(bad)
+    def test_route_must_use_the_same_host_as_the_dns_bind_address(self):
+        mod.validate_config(self.cfg)
+        bad=dict(self.cfg,route_ip='192.0.2.57')
+        with self.assertRaises(ValueError):mod.validate_config(bad)
 
 
 class ForwardingTests(unittest.TestCase):
+    def test_udp_preserves_truncation_instead_of_returning_a_large_tcp_answer(self):
+        payload=query('example.org',qtype=16)
+        truncated=struct.pack('!6H',314,0x8380,1,0,0,0)+payload[12:]
+        txt=b'\xff'+b'a'*255+b'\xff'+b'b'*255
+        answer=b'\xc0\x0c'+struct.pack('!HHIH',16,1,60,len(txt))+txt
+        full=struct.pack('!6H',314,0x8180,1,1,0,0)+payload[12:]+answer
+        # Replace only network I/O: the local sandbox cannot open sockets.
+        with patch.object(mod.socket,'socket') as open_udp, patch.object(mod,'forward_tcp',return_value=full):
+            open_udp.return_value.__enter__.return_value.recv.return_value=truncated
+            self.assertEqual(mod.forward_udp(payload,'198.51.100.30'),truncated)
+
     def test_udp_and_tcp_forward_wire_response_unchanged(self):
         self.assertTrue(hasattr(mod,'forward_udp'),'DNS forwarding behavior not implemented')
         try:

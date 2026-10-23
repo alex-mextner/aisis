@@ -1,12 +1,35 @@
 import argparse
 from contextlib import redirect_stdout
 import io
+import os
+from pathlib import Path
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 from unittest.mock import patch
 
 import operate
+
+
+class EnvironmentTests(unittest.TestCase):
+    def test_preserves_unquoted_json_and_internal_whitespace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.env"
+            path.write_text('AISIS_TEST_COMMAND=["/usr/bin/python3", "voice worker.py"]\nAISIS_TEST_TEXT=two  spaces\n')
+            with patch.dict(os.environ, {}, clear=True):
+                operate.load_env(path)
+                self.assertEqual(os.environ["AISIS_TEST_COMMAND"], '["/usr/bin/python3", "voice worker.py"]')
+                self.assertEqual(os.environ["AISIS_TEST_TEXT"], "two  spaces")
+
+    def test_removes_outer_quotes_and_preserves_empty_value(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.env"
+            path.write_text("AISIS_TEST_COMMAND='[\"python\", \"voice.py\"]'\nAISIS_TEST_EMPTY=\n")
+            with patch.dict(os.environ, {}, clear=True):
+                operate.load_env(path)
+                self.assertEqual(os.environ["AISIS_TEST_COMMAND"], '["python", "voice.py"]')
+                self.assertEqual(os.environ["AISIS_TEST_EMPTY"], "")
 
 
 class Response:

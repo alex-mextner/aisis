@@ -33,10 +33,12 @@ jobs:
       - name: Verify protocol behavior, station isolation and no replay
         run: python -m unittest discover -s backend/yandex -p 'test_*.py' -v
       - name: Verify source-scoped DNS and network guard behavior
-        if: ${{ hashFiles('backend/yandex/network/test_*.py') != '' }}
         run: python -m unittest discover -s backend/yandex/network -p 'test_*.py' -v
       - name: Check deployment shell syntax
-        run: bash -n backend/yandex/install-host.sh backend/yandex/prepare-upstream.sh backend/yandex/prepare-proxy.sh backend/yandex/prepare-stt.sh
+        run: |
+          for script in backend/yandex/*.sh; do
+            bash -n "$script"
+          done
 
   quasar-native-eof:
     runs-on: ubuntu-latest

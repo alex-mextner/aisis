@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { OpusEncoder } from '@discordjs/opus'
 import { OpusProcessor } from './src/codecs/opus-processor'
+import { OggParser } from './src/codecs/ogg-parser'
 
 // Valid Ogg pages with CRC and actual CBR Opus packets. No decoder is mocked.
 function page (sequence: number, lacing: number[], data: Buffer, flags = 0, granule = 0n) {
@@ -107,9 +108,9 @@ test('truncated Ogg lacing or body is rejected before treating shortened data as
   const f = await fixture(), packet = audio(), comment = tags()
   await f.processor.handleAudioData(page(1, [comment.length], comment))
   const complete = page(2, [255, 65], packet, 4, 960n)
-  await assert.rejects(f.processor.handleAudioData(complete.subarray(0, complete.length - 1)), /Truncated Ogg page body/)
+  assert.throws(() => OggParser.parse(complete.subarray(0, complete.length - 1)), /Truncated Ogg page body/)
   assert.equal(f.chunks.length, 0)
-  await assert.rejects(f.processor.handleAudioData(complete.subarray(0, 28)), /Truncated Ogg lacing table/)
+  assert.throws(() => OggParser.parse(complete.subarray(0, 28)), /Truncated Ogg lacing table/)
   assert.equal(f.chunks.length, 0)
 })
 
@@ -138,4 +139,52 @@ test('signed OpusHead output gain at offset16 is applied without mistaking it fo
   }
   const ratio = peak(quieter.chunks[0]) / peak(normal.chunks[0])
   assert.ok(ratio > .49 && ratio < .52, `minus6dB gain ratio was${ratio}`)
+})
+
+
+test('transport frames can split Ogg header lacing and body without changing decoded PCM', async () => {
+  const packet = audio(), comment = tags()
+  const stream = Buffer.concat([head(), page(1, [comment.length], comment), page(2, [255, 65], packet, 4, 960n)])
+  const decode = async (sizes: number[]) => {
+    const chunks: Buffer[] = []
+    const processor = new OpusProcessor(async data => { chunks.push(data) }, async () => {})
+    let position = 0
+    for (const size of sizes) {
+      await processor.handleAudioData(stream.subarray(position, position + size))
+      position += size
+    }
+    await processor.handleAudioData(stream.subarray(position))
+    processor.finish()
+    return Buffer.concat(chunks)
+  }
+  const expected = await decode([])
+  assert.equal(expected.length, 1920)
+  assert.deepEqual(await decode(Array(stream.length).fill(1)), expected)
+  assert.deepEqual(await decode([3, 23, 1, 8, 37, 5, 100]), expected)
+})
+
+test('native EOF rejects a truncated transport page and an unfinished continued packet', async () => {
+  const f = await fixture(), comment = tags(), packet = audio()
+  const commentPage = page(1, [comment.length], comment)
+  await f.processor.handleAudioData(commentPage.subarray(0, -1))
+  assert.throws(() => f.processor.finish(), /truncated|incomplete/i)
+  assert.equal(f.chunks.length, 0)
+  const g = await fixture()
+  await g.processor.handleAudioData(commentPage)
+  await g.processor.handleAudioData(page(2, [255], packet.subarray(0, 255)))
+  assert.throws(() => g.processor.finish(), /truncated|incomplete/i)
+  assert.equal(g.chunks.length, 0)
+})
+
+test('fragmented malformed header is rejected as soon as its signature is available', async () => {
+  const f = await fixture()
+  await f.processor.handleAudioData(Buffer.from('Bad'))
+  await assert.rejects(f.processor.handleAudioData(Buffer.from('!')), /Ogg/i)
+})
+
+
+test('oversized transport frame is rejected before buffering or decoding', async () => {
+  const f = await fixture()
+  await assert.rejects(f.processor.handleAudioData(Buffer.alloc(1024 * 1024 + 1)), /limit/i)
+  assert.equal(f.chunks.length, 0)
 })

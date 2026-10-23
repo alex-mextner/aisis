@@ -25,6 +25,9 @@ BRACHO_REFERENCE = "5cd1ffa5dbb4419cb5766435139c6d92"
 ERROR_REPLY = "Не удалось получить ответ ChatGPT. Проверь авторизацию и подключение. Я не буду повторять запрос автоматически."
 
 
+NO_SPEECH_REPLY = "Не расслышал. Повтори, пожалуйста."
+
+
 class TurnError(Exception):
     pass
 
@@ -85,6 +88,9 @@ async def run_command(command: list[str], payload: dict[str, Any], timeout: floa
 class Adapter:
     def __init__(self, env: dict[str, str] | None = None):
         self.env = env if env is not None else dict(os.environ)
+        self.allowed = {station.strip() for station in self.env.get("AISIS_ALLOWED_STATIONS", "").split(",") if station.strip()}
+        if not self.allowed:
+            raise ValueError("AISIS_ALLOWED_STATIONS must contain at least one speaker ID")
         self.store = Store(self.env.get("AISIS_STATE_DB", str(Path.home()/".local/state/aisis-yandex/adapter.sqlite3")))
         self.command = json.loads(self.env.get("AISIS_CHATGPT_COMMAND", "[]"))
         if not isinstance(self.command, list) or not all(isinstance(x, str) for x in self.command):
@@ -92,7 +98,6 @@ class Adapter:
         self.locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self.tts_limit = asyncio.Semaphore(2)
         self.http: ClientSession | None = None
-        self.allowed = set(filter(None, self.env.get("AISIS_ALLOWED_STATIONS", "").split(",")))
 
     async def start(self, _app):
         self.http = ClientSession(timeout=ClientTimeout(total=60))
@@ -124,7 +129,7 @@ class Adapter:
             try:
                 result = await run_command(self.command, {"station_id": station, "text": text,
                     "conversation_id": self.store.conversation(station), "turn_id": turn},
-                    float(self.env.get("AISIS_CHATGPT_TIMEOUT", "180")))
+                    float(self.env.get("AISIS_CHATGPT_TIMEOUT", "250")))
                 self.store.finish(turn, "complete", station, result.get("conversation_id"))
                 return result["text"].strip()
             except asyncio.CancelledError:
@@ -146,9 +151,14 @@ class Adapter:
                 text = data.get("text")
                 if not isinstance(station, str) or not station or station in {"unknown", "undefined"}:
                     raise TurnError("missing_station_id")
-                if self.allowed and station not in self.allowed:
+                if station not in self.allowed:
                     raise TurnError("station_not_allowed")
-                if not isinstance(text, str) or not text.strip() or len(text) > 16000:
+                if isinstance(text, str) and not text.strip():
+                    if not ws.closed:
+                        await ws.send_json({"type": "partialResponse", "data": {"text": NO_SPEECH_REPLY,
+                            "directives": [], "finished": True, "shouldListen": False}})
+                    return
+                if not isinstance(text, str) or len(text) > 16000:
                     raise TurnError("invalid_text")
                 if data.get("isExternalEvent"):
                     raise TurnError("external_events_disabled")

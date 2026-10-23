@@ -19,7 +19,8 @@ from pathlib import Path
 
 def validate_config(cfg):
     own=ipaddress.IPv4Address(cfg['bind_ip'])
-    ipaddress.IPv4Address(cfg['route_ip'])
+    if ipaddress.IPv4Address(cfg['route_ip'])!=own:
+        raise ValueError('route_ip must equal bind_ip for this single-host stack')
     ipaddress.IPv4Address(cfg['target']['ip'])
     if not re.fullmatch(r'(?:[0-9a-f]{2}:){5}[0-9a-f]{2}',cfg['target']['mac'].lower()):
         raise ValueError('Invalid target MAC')
@@ -115,8 +116,7 @@ def forward_udp(packet,upstream,port=53,timeout=1.5):
         result=sock.recv(65535)
     if len(result)<12 or result[:2]!=packet[:2] or not result[2]&0x80:
         raise ValueError('Invalid upstream DNS response')
-    # Retry truncated UDP replies over TCP against the same upstream.
-    if result[2]&2:return forward_tcp(packet,upstream,port,timeout)
+    # Preserve TC so the client retries over TCP; a full TCP answer may not fit UDP.
     return result
 
 

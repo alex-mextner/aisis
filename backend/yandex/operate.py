@@ -14,14 +14,15 @@ import time
 from aiohttp import ClientSession, ClientTimeout
 
 
-def load_env():
-    path = Path.home()/".config/aisis-yandex/runtime.env"
+def load_env(path=None):
+    path = Path(path) if path is not None else Path.home()/".config/aisis-yandex/runtime.env"
     for line in path.read_text().splitlines():
         if not line or line.lstrip().startswith("#") or "=" not in line:
             continue
         name, value = line.split("=", 1)
-        parts = shlex.split(value, comments=False)
-        os.environ[name] = " ".join(parts)
+        value = value.strip()
+        parts = shlex.split(value, comments=False) if value.startswith(("'", '"')) else []
+        os.environ[name.strip()] = parts[0] if len(parts) == 1 else value
     return path
 
 
@@ -97,9 +98,12 @@ async def probe(args):
             # Both turns are explicitly synthetic; no prior user tabs are used.
             import uuid
             headers = {"Authorization": "Bearer " + os.environ["AISIS_PM_TOKEN"]}
+            http_timeout = float(os.environ.get("AISIS_PM_HTTP_TIMEOUT", "240"))
+            if not 0 < http_timeout <= 300:
+                raise ValueError("invalid_pm_http_timeout")
             conversation = None
             for text in ["Запомни кодовое слово «маяк». Ответь только: запомнил.", "Какое кодовое слово я только что назвал? Ответь только этим словом."]:
-                async with session.post("http://127.0.0.1:31118/turn", headers=headers, json={"station_id": next(x for x in os.environ["AISIS_ALLOWED_STATIONS"].split(",") if x), "text": text, "conversation_id": conversation, "turn_id": uuid.uuid4().hex}, timeout=ClientTimeout(total=180)) as response:
+                async with session.post("http://127.0.0.1:31118/turn", headers=headers, json={"station_id": next(x for x in os.environ["AISIS_ALLOWED_STATIONS"].split(",") if x), "text": text, "conversation_id": conversation, "turn_id": uuid.uuid4().hex}, timeout=ClientTimeout(total=http_timeout)) as response:
                     body = await response.json()
                     if response.status != 200:
                         print(json.dumps({"pm_probe_http": response.status, "result": body}, ensure_ascii=False), flush=True)

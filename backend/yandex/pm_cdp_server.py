@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import os
 from pathlib import Path
 import re
@@ -24,6 +25,12 @@ LOG=logging.getLogger("aisis.pm")
 def log_refusal(code,status):
     safe=code if isinstance(code,str) and re.fullmatch(r"[a-z][a-z0-9_]{0,63}",code) else "internal_error"
     LOG.warning("pm_turn_refused code=%s status=%d",safe,status if type(status) is int and 100<=status<=599 else 503)
+
+def positive_timeout(value):
+    value=float(value)
+    if not math.isfinite(value) or value<=0 or value>300:
+        raise ValueError('timeout must be finite and in (0,300]')
+    return value
 
 class Refusal(Exception):
     def __init__(self, code, status=503):
@@ -42,22 +49,27 @@ class Ledger:
         ''')
         with self.db:
             columns={r[1] for r in self.db.execute('PRAGMA table_info(sessions)')}
-            for column in ('anchor_turn','anchor_digest'):
+            for column in ('anchor_turn','anchor_digest','navigation_state'):
                 if column not in columns: self.db.execute('ALTER TABLE sessions ADD COLUMN '+column+' TEXT')
             self.db.execute("UPDATE turns SET status='uncertain' WHERE status IN ('reserved','dispatching')")
         path.chmod(0o600)
     def session(self, station):
-        row=self.db.execute('SELECT target,url,anchor_turn,anchor_digest FROM sessions WHERE station=?',(station,)).fetchone()
-        return dict(zip(('target','url','anchor_turn','anchor_digest'),row)) if row else None
-    def remember(self, station, target, url, anchor_turn=None, anchor_digest=None):
+        row=self.db.execute('SELECT target,url,anchor_turn,anchor_digest,navigation_state FROM sessions WHERE station=?',(station,)).fetchone()
+        return dict(zip(('target','url','anchor_turn','anchor_digest','navigation_state'),row)) if row else None
+    def remember(self, station, target, url, anchor_turn=None, anchor_digest=None, navigation_state=None):
         with self.db:
             owner=self.db.execute('SELECT station FROM sessions WHERE target=? AND station!=?',(target,station)).fetchone()
             if owner: raise Refusal('tab_owned_by_another_station',409)
-            self.db.execute('''INSERT INTO sessions(station,target,url,anchor_turn,anchor_digest) VALUES(?,?,?,?,?)
+            self.db.execute('''INSERT INTO sessions(station,target,url,anchor_turn,anchor_digest,navigation_state) VALUES(?,?,?,?,?,?)
                 ON CONFLICT(station) DO UPDATE SET target=excluded.target,url=excluded.url,
                 anchor_turn=COALESCE(excluded.anchor_turn,sessions.anchor_turn),
-                anchor_digest=COALESCE(excluded.anchor_digest,sessions.anchor_digest)''',
-                (station,target,url,anchor_turn,anchor_digest))
+                anchor_digest=COALESCE(excluded.anchor_digest,sessions.anchor_digest),
+                navigation_state=COALESCE(excluded.navigation_state,sessions.navigation_state)''',
+                (station,target,url,anchor_turn,anchor_digest,navigation_state))
+    def can_recreate_homepage(self, station):
+        # Only a fresh request after conclusively pre-dispatch failures may repair
+        # an empty session. A reservation recovered on restart is uncertain.
+        return not self.db.execute("SELECT 1 FROM turns WHERE station=? AND status NOT IN ('reserved','failed','verified_not_sent')",(station,)).fetchone()
     def turn_status(self, turn):
         row=self.db.execute('SELECT status FROM turns WHERE id=?',(turn,)).fetchone()
         return row[0] if row else None
@@ -103,8 +115,9 @@ def match_reply(baseline, turns, prompt):
     return turn['id'],turn['assistant'].strip()
 
 class PromptService:
-    def __init__(self,driver,ledger,allowed):
+    def __init__(self,driver,ledger,allowed,request_timeout=230):
         self.driver,self.ledger,self.allowed=driver,ledger,set(allowed)
+        self.request_timeout=positive_timeout(request_timeout)
         self.lock=asyncio.Lock()
         self.pending=set()
     def validate(self,payload):
@@ -140,15 +153,27 @@ class PromptService:
             if payload.get('conversation_id') and (not session or payload['conversation_id']!=session['url']):
                 raise Refusal('conversation_not_owned',409)
             self.ledger.reserve(payload)
+            if session:
+                session['can_recreate_homepage']=self.ledger.can_recreate_homepage(payload['station_id'])
             dispatched=False
-            def remember(target,url,anchor_turn=None,anchor_digest=None):
-                self.ledger.remember(payload['station_id'],target,url,anchor_turn,anchor_digest)
+            def remember(target,url,anchor_turn=None,anchor_digest=None,**metadata):
+                self.ledger.remember(payload['station_id'],target,url,anchor_turn,anchor_digest,**metadata)
             def dispatching():
                 nonlocal dispatched
                 dispatched=True
                 self.ledger.mark(payload['turn_id'],'dispatching')
             try:
-                result=await self.driver.ask(payload,session,remember,dispatching)
+                try:
+                    async with asyncio.timeout(self.request_timeout):
+                        result=await self.driver.ask(payload,session,remember,dispatching)
+                except TimeoutError:
+                    # Cancellation cannot abandon protected_dispatch: shared pm
+                    # drains an invocation before propagating cancellation. Never
+                    # replay a send whose outcome is unknown.
+                    if dispatched:
+                        self.ledger.mark(payload['turn_id'],'uncertain')
+                        await self.driver.stop_uncertain(self.ledger.session(payload['station_id']))
+                    raise Refusal('request_timeout',504) from None
                 self.ledger.mark(payload['turn_id'],'complete')
                 return result
             except BaseException as error:
@@ -266,9 +291,27 @@ if(action==='prepare'){
  if(!timely()||!safe(read())||!same(read(),expected)||!verified()||document.activeElement!==composer)return result;
  result.ok=document.execCommand('insertText',false,prompt);return result;
 }
-if(action==='send'){
+const sendStatus=()=>{
  const o=read(),send=one('button[aria-label="Send"]');
- if(!prepared?.ok||!timely()||!verified()||prepared.url!==location.href||prepared.composer!==composer||prepared.trigger!==trigger||prepared.root!==ownedRoot().root||!safe(o,true)||!same({...o,draft:''},prepared.baseline)||!send||send.disabled||send.getAttribute('aria-disabled')==='true')return false;
+ const blocked=reason=>({ready:false,reason});
+ if(!prepared?.ok)return blocked('preparation_missing');
+ if(!timely())return blocked('deadline_expired');
+ if(!verified())return blocked('model_evidence_changed');
+ if(prepared.url!==location.href)return blocked('conversation_changed');
+ if(prepared.composer!==composer)return blocked('composer_identity_changed');
+ if(prepared.trigger!==trigger)return blocked('trigger_identity_changed');
+ if(prepared.root!==ownedRoot().root)return blocked('root_identity_changed');
+ if(!safe(o,true))return blocked('owned_draft_or_ui_changed');
+ if(!same({...o,draft:''},prepared.baseline))return blocked('baseline_changed');
+ if(!send)return blocked('send_missing');
+ if(send.disabled||send.getAttribute('aria-disabled')==='true')return blocked('send_disabled');
+ return {ready:true,reason:'ready'};
+};
+if(action==='send-status')return sendStatus();
+if(action==='send'){
+ const status=sendStatus();
+ if(!status.ready)return {clicked:false,reason:status.reason};
+ const send=one('button[aria-label="Send"]');
  send.click();return true;
 }
 return false;
@@ -292,7 +335,7 @@ class CDPDriver:
         self.endpoint=env.get('AISIS_PM_CDP','http://127.0.0.1:9226')
         self.initial_target=env.get('AISIS_PM_INITIAL_TARGET','')
         self.initial_used=False
-        self.reply_timeout=float(env.get('AISIS_PM_REPLY_TIMEOUT','170'))
+        self.reply_timeout=positive_timeout(env.get('AISIS_PM_REPLY_TIMEOUT','170'))
         self.max_tabs=int(env.get('AISIS_PM_MAX_TABS','6'))
     @property
     def ready(self):
@@ -341,36 +384,56 @@ class CDPDriver:
         if not target and self.initial_target and not self.initial_used:
             target=self.initial_target; self.initial_used=True
         expected=(session or {}).get('url','https://chatgpt.com/')
+        homepage=expected=='https://chatgpt.com/'
+        recreate=homepage and (session or {}).get('can_recreate_homepage') is True
         pages=[p for p in self.context.pages if not p.is_closed()]
         if target:
             matches=[]
             for page in pages:
                 if await self.target(page)==target: matches.append(page)
             exact=[p for p in pages if p.url.rstrip('/')==expected.rstrip('/')]
-            if len(matches)>1 or len(exact)>1: raise Refusal('owned_tab_ambiguous')
+            # Homepage URL is shared by ordinary user tabs. The unique saved
+            # target, never an arbitrary homepage URL match, is its authority.
+            if len(matches)>1 or (not homepage and len(exact)>1): raise Refusal('owned_tab_ambiguous')
             if matches:
                 page=matches[0]
-                # An existing target navigated by a human must never be overwritten.
-                if page.url.rstrip('/')!=expected.rstrip('/'): raise Refusal('owned_tab_navigated')
-                remember(target,expected)
-                return page,target
-            # Chrome restart changes target IDs. Only this station's durable,
-            # permanent URL proves ownership; a lost homepage cannot be recovered.
-            if not session or not re.fullmatch(r'https://chatgpt\.com/c/[A-Za-z0-9_-]+',expected):
+                if page.url.rstrip('/')==expected.rstrip('/'):
+                    remember(target,expected)
+                    return page,target
+                # A failed first navigation may leave our empty about:blank tab.
+                # Only durable failure + no-dispatch history permits repair.
+                if recreate and session.get('navigation_state')=='failed' and page.url=='about:blank':
+                    return await self.navigate_owned(page,target,expected,remember)
+                raise Refusal('owned_tab_navigated')
+            if not homepage:
+                if not re.fullmatch(r'https://chatgpt\.com/c/[A-Za-z0-9_-]+',expected): raise Refusal('owned_tab_missing')
+                if exact:
+                    page=exact[0];target=await self.target(page)
+                    remember(target,expected)
+                    return page,target
+            elif not recreate:
                 raise Refusal('owned_tab_missing')
-            if exact:
-                page=exact[0]
-                target=await self.target(page)
-                remember(target,expected)
-                return page,target
         if len(pages)>=self.max_tabs: raise Refusal('tab_capacity')
         page,target=await self.new_background_page()
-        # Persist the new target before navigation. A failed navigation stays open,
-        # and its mismatched URL is refused on the next request, never auto-retried.
-        remember(target,expected)
+        return await self.navigate_owned(page,target,expected,remember)
+    async def navigate_owned(self,page,target,expected,remember):
+        homepage=expected=='https://chatgpt.com/'
+        # Persist target before navigation. Failure is never retried by this turn.
+        remember(target,expected,**({'navigation_state':'pending'} if homepage else {}))
         try: await page.goto(expected,wait_until='domcontentloaded',timeout=30000)
-        except Exception: raise Refusal('navigation_failed') from None
+        except Exception:
+            if homepage: remember(target,expected,navigation_state='failed')
+            raise Refusal('navigation_failed') from None
+        if homepage: remember(target,expected,navigation_state='ready')
         return page,target
+    async def stop_uncertain(self,session):
+        # A timeout can pin a known owned conversation only. Do not fabricate a
+        # global stop for a first-turn homepage or replace any existing reason.
+        chat=(session or {}).get('url','')
+        if not re.fullmatch(r'https://chatgpt\.com/c/[A-Za-z0-9_-]+',chat): return
+        async with self.store.async_guard() as db:
+            if not db.execute('SELECT 1 FROM controls WHERE key=?',('stop:'+chat,)).fetchone():
+                self.store.stop(chat,'AISIS request timeout',db)
     async def snapshot(self,page,expected_chat=None,allow_created_chat=False):
         try:
             result=await asyncio.wait_for(page.evaluate(self.script,{'expected_chat':expected_chat or '', 'allow_created_chat':allow_created_chat}),timeout=5)
@@ -422,6 +485,22 @@ class CDPDriver:
             raise Refusal('conversation_changed')
         handle=await page.evaluate_handle(self.script,{'action':'probe','expected_chat':snapshot['chat'],'expected':{'model':model,'effort':'Extra High' if model=='Sol' else ''}})
         return model,('Extra High' if model=='Sol' else ''),handle,current
+    async def wait_send_ready(self,page,prompt,chat,probe,prepared):
+        deadline=time.monotonic()+10
+        previous=None
+        while time.monotonic()<deadline:
+            status=await asyncio.wait_for(page.evaluate(self.script,{'action':'send-status','expected_chat':chat,'prompt':prompt,'probe':probe,'prepared':prepared,'deadline':(time.time()+5)*1000}),timeout=5)
+            if not isinstance(status,dict) or type(status.get('ready')) is not bool:
+                raise Refusal('send_readiness_unknown')
+            if status['ready']: return
+            reason=status.get('reason')
+            if reason not in ('send_missing','send_disabled'):
+                code=reason if isinstance(reason,str) and re.fullmatch(r'[a-z_]{1,40}',reason) else 'unknown'
+                raise Refusal('send_not_ready_'+code)
+            if reason!=previous:
+                LOG.warning('pm_send_readiness code=%s',reason);previous=reason
+            await asyncio.sleep(.1)
+        raise Refusal('send_not_ready_timeout')
     async def ask(self,payload,session,remember,dispatching):
         if not self.browser.is_connected(): raise Refusal('browser_disconnected')
         # Check shared stops before creating any tab or changing a composer.
@@ -445,7 +524,7 @@ class CDPDriver:
                 prepared=await self.dispatch(page.evaluate_handle(self.script,{'action':'prepare','expected_chat':chat,'expected':initial,'prompt':payload['text'],'probe':probe,'deadline':(time.time()+5)*1000}))
                 ok=await (await prepared.get_property('ok')).json_value()
                 if ok is not True: raise Refusal('preparation_refused')
-            await page.locator('button[aria-label="Send"]').wait_for(state='visible',timeout=10000)
+            await self.wait_send_ready(page,payload['text'],chat,probe,prepared)
             async with self.store.async_guard() as db:
                 current=await self.snapshot(page,expected_chat=chat)
                 self.record(current,db)
@@ -454,7 +533,10 @@ class CDPDriver:
                 dispatching()
                 try:
                     sent=await self.dispatch(page.evaluate(self.script,{'action':'send','expected_chat':chat,'prompt':payload['text'],'probe':probe,'prepared':prepared,'deadline':(time.time()+5)*1000}))
-                    if sent is not True: raise Refusal('send_refused')
+                    if sent is not True:
+                        reason=sent.get('reason') if isinstance(sent,dict) and sent.get('clicked') is False else None
+                        code=reason if isinstance(reason,str) and re.fullmatch(r'[a-z_]{1,40}',reason) else 'unknown'
+                        raise Refusal('send_refused_'+code)
                 except BaseException:
                     self.store.stop(chat,'AISIS dispatch uncertain',db)
                     raise
@@ -551,7 +633,7 @@ async def main():
     runner=None
     try:
         await driver.start()
-        service=PromptService(driver,ledger,allowed)
+        service=PromptService(driver,ledger,allowed,env.get('AISIS_PM_REQUEST_TIMEOUT','230'))
         runner=web.AppRunner(create_app(service,token))
         await runner.setup()
         await web.TCPSite(runner,'127.0.0.1',int(env.get('AISIS_PM_PORT','31118'))).start()

@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
-# Install only the AISIS adapter. Does not alter speaker, router or browser state.
+# Install AISIS backend files. Does not alter speaker, router or browser state.
 set -euo pipefail
 src=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 dest="$HOME/.local/share/aisis-yandex"
 config="$HOME/.config/aisis-yandex"
 state="$HOME/.local/state/aisis-yandex"
+runtime_files=(adapter.py chatgpt_pm.py pm_cdp_server.py stt_wyoming.py operate.py compose.yaml requirements.txt)
+units=(aisis-yandex-adapter.service aisis-yandex-pm.service aisis-yandex-stt.service aisis-yandex-wyoming-tunnel.service)
+for file in "${runtime_files[@]}" "${units[@]}" runtime.env.example; do
+  if [[ ! -f "$src/$file" ]]; then
+    printf 'Required source file is missing: %s\n' "$file" >&2
+    exit 1
+  fi
+done
+command -v uv >/dev/null || { printf 'uv is required for installation.\n' >&2; exit 1; }
 install -d -m700 "$dest" "$config" "$state" "$HOME/.config/systemd/user"
-for file in adapter.py chatgpt_pm.py pm_cdp_server.py stt_wyoming.py requirements.txt; do
-  [[ -f "$src/$file" ]] && install -m600 "$src/$file" "$dest/$file"
+for file in "${runtime_files[@]}"; do
+  install -m600 "$src/$file" "$dest/$file"
 done
 if [[ ! -x "$dest/venv/bin/python" ]]; then
   uv venv "$dest/venv" --python 3.12
@@ -20,8 +29,8 @@ if [[ ! -x "$guardian_python" ]]; then
   exit 1
 fi
 uv pip install --python "$guardian_python" --target "$dest/pm-deps" 'aiohttp==3.13.3'
-for unit in aisis-yandex-adapter.service aisis-yandex-pm.service aisis-yandex-stt.service aisis-yandex-wyoming-tunnel.service; do
-  [[ -f "$src/$unit" ]] && install -m600 "$src/$unit" "$HOME/.config/systemd/user/$unit"
+for unit in "${units[@]}"; do
+  install -m600 "$src/$unit" "$HOME/.config/systemd/user/$unit"
 done
 if [[ ! -f "$config/runtime.env" ]]; then
   python3 - "$src/runtime.env.example" "$config/runtime.env" <<'PY'
@@ -37,7 +46,7 @@ cat > "$state/deployment-ledger.md" <<'MD'
 
 - Worktree: yandex-chatgpt-backend, feature branch; public sources contain no host inventory.
 - Quasar source pinned a983cda873f80be66d820bffe01e09f125f62cf8.
-- Loopback adapter31117, admin31116, Postgres31119; speaker protocol31115.
+- Loopback adapter 31117, admin 31116, Postgres 31119; speaker protocol 31115.
 - Adapter source installed. Service must be started only after real browser and voice credentials are configured.
 - No speaker/router/DNS mutation was made by installation.
 - Outstanding: real ChatGPT continuity, Fish Opus, streaming STT, runtime launch, exact speaker compatibility, one-device end-to-end migration.

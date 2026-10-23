@@ -6,7 +6,7 @@
   },
   "fixed": {
     "src/backend/backend.ts": "c4c56397b0707e269e5a9e629d1c3c4ef3b3d49534168fae648f83b2d9373e24",
-    "src/backend/stt/gigaam.ts": "3139150fc4aa5538780c0e4f9190f298058c651360c91729a084e13a8121a5fb",
+    "src/backend/stt/gigaam.ts": "eafbdd7728c72b3b266f72679602181e48e9b1bca4ae6ff62751ff67f9a5c6d6",
     "src/routers/uniproxy/voice-input-handler.ts": "9f51dc786c4387b96ff1f071fa55ba136f0ab9b04367d891bcdbbebcc838dfd1"
   }
 }

@@ -22,11 +22,12 @@ services:
       context: ${AISIS_QUASAR_SOURCE:?run prepare-upstream.sh}
     restart: unless-stopped
     network_mode: host
-    env_file:
-      - ${AISIS_RUNTIME_ENV:?private environment file required}
     environment:
       PORT: "31115"
       API_PORT: "31116"
+      GLAGOL_JWT_KEY: ${GLAGOL_JWT_KEY:?set persistent private key}
+      STT_GIGAAM_URL: ${STT_GIGAAM_URL:?set local streaming STT endpoint}
+      TTS_OPENAI_API_KEY: ${TTS_OPENAI_API_KEY:-local-loopback}
       POSTGRES_URL: "postgres://quasar:${POSTGRES_PASSWORD}@127.0.0.1:31119/quasar"
       PROCESSOR_BASIC_URL: "http://127.0.0.1:31117/processor"
       TTS_OPENAI_BASE_URL: "http://127.0.0.1:31117/v1"

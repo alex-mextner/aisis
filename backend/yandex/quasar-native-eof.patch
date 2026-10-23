@@ -21,9 +21,10 @@
 +        }
 @@ -38,0 +47 @@
 +      if (!this.finalSeen) this.rejectFinish?.(new Error('STT closed before final result'))
-@@ -41,0 +51,17 @@
+@@ -41,0 +51,18 @@
 +  async finish (): Promise<void> {
 +    if (this.finalSeen) return
++    this.opusProcessor.finish()
 +    if (this.finishPromise) return this.finishPromise
 +    if (this.stopped) throw new Error('STT session already closed')
 +    this.finishPromise = new Promise<void>((resolve, reject) => {
@@ -39,9 +40,9 @@
 +    await this.finishPromise
 +  }
 +
-@@ -43 +68,0 @@
+@@ -43 +69,0 @@
 -    if (this.stopped) return
-@@ -44,0 +70 @@
+@@ -44,0 +71 @@
 +    if (!this.finalSeen) this.rejectFinish?.(new Error('STT session cancelled'))
 --- a/src/routers/uniproxy/voice-input-handler.ts
 +++ b/src/routers/uniproxy/voice-input-handler.ts

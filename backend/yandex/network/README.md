@@ -16,14 +16,17 @@ Copy `config.example.json` to a private directory and replace all documentation 
 synthetic MACs. Set the router host, existing router-cli checkout path, server MAC, target
 speaker IP/MAC, explicit original DNS upstreams, and administration probe IPs. Keep `enabled`
 false initially. The `bind_ip` is the DNS relay's stable LAN address; `route_ip` is the TLS gateway.
+They must be equal for this single-host stack because Compose binds the TLS ports to `bind_ip`.
 Do not use loopback/self DNS as upstreams. Keep the router's existing DHCP pool and lease time.
 
 Run `python3 network/prepare_local.py --config /absolute/private/config.json` from the parent
-backend directory. It writes an owner-only Nginx config beside the private JSON and prints the
-two environment settings needed below. Use the same exported values for all Compose commands:
+backend directory. It writes owner-only Nginx configs beside the private JSON and prints the
+two environment settings needed below. `AISIS_NETWORK_CONFIG_DIR` must be that same directory,
+containing `config.json`, `compat-nginx.conf` and `voice-nginx.conf`. Use the printed values for
+all Compose commands:
 
 ```bash
-export AISIS_NETWORK_CONFIG_DIR=/absolute/private/network
+export AISIS_NETWORK_CONFIG_DIR=/absolute/private
 export AISIS_SPEAKER_BIND_IP=<private-LAN-bind-address>
 docker compose -f compose.network.yaml up -d dns-relay
 python3 -m unittest discover -s network -p 'test_*.py'

@@ -17,7 +17,13 @@ already provide it. Install `aisis-yandex-adapter.service` to
 `~/.config/systemd/user/`. Copy `runtime.env.example` to the private path
 `~/.config/aisis-yandex/runtime.env`, mode0600, and fill values from the existing
 local credentials. Generate PostgreSQL and GLAGOL keys once and preserve them.
-The GLAGOL key must remain stable across restarts.
+The GLAGOL key must remain stable across restarts. Fill `AISIS_ALLOWED_STATIONS`
+with the intended speaker IDs before starting the adapter; an empty or whitespace
+only list refuses startup, and unknown IDs never reach ChatGPT.
+
+Compose reads the private environment for interpolation, but gives Quasar only
+its explicit protocol, database, STT and local TTS settings. PM authentication,
+browser configuration and Fish credentials stay outside the Quasar container.
 
 `AISIS_CHATGPT_COMMAND` is a JSON argument vector, not a shell command. Its
 executable reads a single JSON line and writes a single JSON response as
@@ -138,21 +144,28 @@ forced stop timeout. A failed or interrupted dispatch is recorded privately and
 never resent. Inspect the owned chat and ledger before reconciling an uncertain
 turn. Do not delete state or clear a Guardian stop to make a request succeed.
 
-For an already deployed legacy HA ChatGPT-web service, the optional client path
-`AISIS_CHATGPT_WEB_URL` can use its OpenAI-compatible route and local history
-prefix matching instead. This route is accepted only on a loopback HTTP service
-and never points to the paid OpenAI API.
+`chatgpt_pm.py` uses only this authenticated local pm service. It does not
+persist conversation transcripts or offer a legacy completion route. The default
+time budgets are230s for the complete browser operation (including preparation),
+170s maximum for reply observation,240s for its HTTP client and250s for the
+adapter subprocess. These nested limits let the server return a bounded failure
+before its callers time out. A protected dispatch already executing still drains
+before cancellation is resolved; an uncertain send never becomes a retry.
 
 
 ## Native speech completion and cancellation
 
 The supported Wyoming gateway distinguishes normal native audio EOF from
-cancellation. Quasar's patched `VoiceInputHandler` flushes queued audio and calls
+cancellation. Quasar's Opus decoder buffers incomplete Ogg pages across transport frames,
+retains complete packet boundaries, rejects oversized frames and checks for an
+unconsumed partial page or packet at native EOF. Each utterance gets a new
+decoder. Quasar's patched `VoiceInputHandler` flushes queued audio and calls
 its STT session's `finish()`. The WebSocket client sends `{"type":"finish"}`,
 keeps the connection open, and waits up to40s for the final `end_of_utt` result.
 The gateway flushes speech without needing extra silence and permits up to35s
 for recognition. Native EOF arriving during an existing VAD-triggered ASR call
-joins that same call. A shared finalization promise emits exactly one finish
+joins that same call. Empty recognition asks the speaker to repeat without making a ChatGPT request.
+A shared finalization promise emits exactly one finish
 when VAD and native Close race.
 
 Cancellation closes the STT transport immediately (the gateway also accepts

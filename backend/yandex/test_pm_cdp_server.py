@@ -306,3 +306,176 @@ class FakeDriver:
             self.cancelled=True; raise
 
 if __name__=='__main__': unittest.main()
+
+@unittest.skipUnless(shutil.which('node'),'Node is required for the injected JS boundary')
+class SendReadinessTests(unittest.TestCase):
+    def fixture(self,variant='normal'):
+        shared="const all=(s,r=document)=>r.querySelectorAll(s);const visible=e=>!!e&&e.isConnected&&e.getClientRects().length>0;const rootSelector='ROOT';const conversationRoot=()=>({root:null,error:'conversation-id-missing',match:''});const thinkingFailure=()=>({count:0});"
+        script=server.DOM.replace('/*@conversation-root*/',shared)
+        setup=r"""
+global.performance={timeOrigin:Date.now(),now:()=>0};global.location={origin:'https://chatgpt.com',pathname:'/',href:'https://chatgpt.com/'};let clicks=0;
+const element=(text='',attrs={})=>({textContent:text,isConnected:true,disabled:false,getClientRects:()=>[{}],getAttribute:k=>attrs[k]||null});
+const trigger=element('Thinking',{'aria-label':'Select ChatGPT model'}),composer=element(''),profile=element(''),send=element('');send.click=()=>clicks++;
+global.document={title:'ChatGPT',querySelectorAll:s=>{if(s.includes('data-composer-markdown'))return [composer];if(s.includes('data-codex-intelligence-trigger'))return [trigger];if(s==='button[aria-label="Open profile menu"]')return [profile];if(s==='button[aria-label="Send"]')return [send];return []}};
+"""
+        source=setup+'const run=('+script+');const expected=run({expected_chat:"https://chatgpt.com/"});const probe=run({action:"probe",expected:{model:"Astra",effort:""}});const prepared={ok:true,url:location.href,composer,trigger,root:null,baseline:expected};composer.textContent="pending";'
+        if variant=='disabled':source+='send.disabled=true;'
+        if variant=='changed_composer':source+='prepared.composer={};'
+        if variant=='changed_model':source+='trigger.textContent="Pro";'
+        source+='const args={action:"send-status",prompt:"pending",probe,prepared,expected_chat:"https://chatgpt.com/",deadline:Date.now()+3000};const first=run(args);const initialClicks=clicks;send.disabled=false;const second=run(args);const sent=run({...args,action:"send"});console.log(JSON.stringify({first,second,initialClicks,clicks,sent}));'
+        result=subprocess.run(['node','-e',source],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        return json.loads(result.stdout)
+    def test_disabled_readiness_wait_is_read_only_then_final_send_rechecks(self):
+        result=self.fixture('disabled')
+        self.assertEqual(result['first'],{'ready':False,'reason':'send_disabled'})
+        self.assertEqual(result['initialClicks'],0)
+        self.assertEqual(result['second'],{'ready':True,'reason':'ready'})
+        self.assertTrue(result['sent']);self.assertEqual(result['clicks'],1)
+    def test_prepared_composer_change_is_never_retried_or_clicked(self):
+        result=self.fixture('changed_composer')
+        self.assertEqual(result['first'],{'ready':False,'reason':'composer_identity_changed'})
+        self.assertEqual(result['sent'].get('clicked'),False);self.assertEqual(result['clicks'],0)
+    def test_model_signature_change_is_never_clicked(self):
+        result=self.fixture('changed_model')
+        self.assertEqual(result['first'],{'ready':False,'reason':'model_evidence_changed'})
+        self.assertEqual(result['sent'].get('clicked'),False);self.assertEqual(result['clicks'],0)
+
+class SendReadinessPollingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_poll_only_reads_until_enabled(self):
+        calls=[]
+        class Page:
+            async def evaluate(self,script,payload):
+                calls.append(payload['action'])
+                return {'ready':len(calls)>1,'reason':'ready' if len(calls)>1 else 'send_disabled'}
+        driver=server.CDPDriver.__new__(server.CDPDriver);driver.script='unused'
+        await driver.wait_send_ready(Page(),'pending','https://chatgpt.com/c/owned',None,None)
+        self.assertEqual(calls,['send-status','send-status'])
+    async def test_identity_change_stops_without_retry(self):
+        calls=[]
+        class Page:
+            async def evaluate(self,script,payload):
+                calls.append(payload['action']);return {'ready':False,'reason':'composer_identity_changed'}
+        driver=server.CDPDriver.__new__(server.CDPDriver);driver.script='unused'
+        with self.assertRaises(server.Refusal) as caught:
+            await driver.wait_send_ready(Page(),'pending','https://chatgpt.com/c/owned',None,None)
+        self.assertEqual(caught.exception.code,'send_not_ready_composer_identity_changed')
+        self.assertEqual(calls,['send-status'])
+
+class HomepageRepairTests(unittest.IsolatedAsyncioTestCase):
+    driver=RestartRecoveryTests.driver
+    async def test_owned_homepage_target_wins_over_ordinary_homepage_tabs(self):
+        driver=self.driver([('owned','https://chatgpt.com/'),('human','https://chatgpt.com/')])
+        page,target=await driver.page_for({'target':'owned','url':'https://chatgpt.com/'},lambda *a,**kw:None)
+        self.assertEqual(target,'owned');self.assertEqual(driver.context.created,0)
+        self.assertEqual(page.navigations,[])
+    async def test_lost_homepage_can_recreate_only_with_no_dispatch_proof(self):
+        driver=self.driver([('human','https://chatgpt.com/')])
+        records=[]
+        page,target=await driver.page_for({'target':'lost','url':'https://chatgpt.com/','can_recreate_homepage':True},lambda *a,**kw:records.append((a,kw)))
+        self.assertEqual(target,'created-1')
+        self.assertEqual(page.navigations,['https://chatgpt.com/'])
+        self.assertEqual(driver.context.pages[0].navigations,[])
+    async def test_proven_failed_navigation_retries_only_the_owned_blank_target(self):
+        driver=self.driver([('owned','about:blank')])
+        page,target=await driver.page_for({'target':'owned','url':'https://chatgpt.com/','navigation_state':'failed','can_recreate_homepage':True},lambda *a,**kw:None)
+        self.assertEqual(target,'owned');self.assertEqual(driver.context.created,0)
+        self.assertEqual(page.navigations,['https://chatgpt.com/'])
+    async def test_no_dispatch_proof_does_not_overwrite_human_navigation(self):
+        driver=self.driver([('owned','https://chatgpt.com/c/human')])
+        with self.assertRaises(server.Refusal):
+            await driver.page_for({'target':'owned','url':'https://chatgpt.com/','navigation_state':'failed','can_recreate_homepage':True},lambda *a,**kw:None)
+        self.assertEqual(driver.context.pages[0].navigations,[])
+    async def test_navigation_failure_persists_explicit_failed_state(self):
+        driver=self.driver([]);records=[]
+        async def fail(*a,**kw):raise RuntimeError('navigation failure')
+        original=driver.new_background_page
+        async def background():
+            page,target=await original();page.goto=fail;return page,target
+        driver.new_background_page=background
+        with self.assertRaises(server.Refusal):
+            await driver.page_for(None,lambda *a,**kw:records.append((a,kw)))
+        self.assertEqual(records[-1][1],{'navigation_state':'failed'})
+
+class DeadlineTests(unittest.IsolatedAsyncioTestCase):
+    asyncSetUp=PromptServiceTests.asyncSetUp
+    asyncTearDown=PromptServiceTests.asyncTearDown
+    request=PromptServiceTests.request
+    async def test_total_timeout_before_dispatch_is_failed_without_stop(self):
+        self.service.request_timeout=.015;self.driver.gate=asyncio.Event()
+        with self.assertRaises(server.Refusal) as caught:await self.service.submit(self.request())
+        self.assertEqual(caught.exception.code,'request_timeout')
+        self.assertEqual(self.ledger.turn_status('one'),'failed')
+    async def test_total_timeout_after_dispatch_blocks_replay_and_stops_owned_chat(self):
+        self.service.request_timeout=.015;stops=[]
+        async def ask(payload,session,remember,dispatching):
+            remember('owned','https://chatgpt.com/c/a');dispatching();await asyncio.Event().wait()
+        async def stop(session):stops.append(session['url'])
+        self.driver.ask=ask;self.driver.stop_uncertain=stop
+        with self.assertRaises(server.Refusal) as caught:await self.service.submit(self.request())
+        self.assertEqual(caught.exception.code,'request_timeout')
+        self.assertEqual(self.ledger.turn_status('one'),'uncertain')
+        self.assertEqual(stops,['https://chatgpt.com/c/a'])
+        with self.assertRaises(server.Refusal):await self.service.submit(self.request('next'))
+    async def test_no_dispatch_history_proof_rejects_every_dispatched_state(self):
+        self.ledger.reserve(self.request())
+        self.assertTrue(self.ledger.can_recreate_homepage('a'))
+        for state in ('dispatching','uncertain','complete'):
+            self.ledger.mark('one',state)
+            self.assertFalse(self.ledger.can_recreate_homepage('a'))
+        self.ledger.mark('one','failed')
+        self.assertTrue(self.ledger.can_recreate_homepage('a'))
+    async def test_navigation_failure_marker_is_durable(self):
+        self.ledger.remember('a','target','https://chatgpt.com/',navigation_state='failed')
+        self.assertEqual(self.ledger.session('a')['navigation_state'],'failed')
+        self.ledger.remember('a','target','https://chatgpt.com/',navigation_state='ready')
+        self.assertEqual(self.ledger.session('a')['navigation_state'],'ready')
+
+class TimeoutControlTests(unittest.IsolatedAsyncioTestCase):
+    async def test_timeout_stop_is_scoped_and_preserves_existing_controls(self):
+        from contextlib import asynccontextmanager
+        import sqlite3
+        db=sqlite3.connect(':memory:');db.execute('CREATE TABLE controls(key TEXT PRIMARY KEY,value TEXT)')
+        controls={'stop:*':'transport HTTP 429; manual resume required','astra_quota':'blocked','stop:https://chatgpt.com/c/other':'manual','watch:https://chatgpt.com/c/owned':'0'}
+        db.executemany('INSERT INTO controls VALUES(?,?)',controls.items())
+        class Store:
+            @asynccontextmanager
+            async def async_guard(self):yield db
+            def stop(self,chat,reason,connection):connection.execute('INSERT OR REPLACE INTO controls VALUES(?,?)',('stop:'+chat,reason))
+        driver=server.CDPDriver.__new__(server.CDPDriver);driver.store=Store()
+        await driver.stop_uncertain({'url':'https://chatgpt.com/'})
+        self.assertEqual(dict(db.execute('SELECT * FROM controls')),controls)
+        await driver.stop_uncertain({'url':'https://chatgpt.com/c/owned'})
+        self.assertEqual(dict(db.execute('SELECT * FROM controls')),{**controls,'stop:https://chatgpt.com/c/owned':'AISIS request timeout'})
+        db.execute("UPDATE controls SET value='human stop' WHERE key='stop:https://chatgpt.com/c/owned'")
+        await driver.stop_uncertain({'url':'https://chatgpt.com/c/owned'})
+        self.assertEqual(db.execute("SELECT value FROM controls WHERE key='stop:https://chatgpt.com/c/owned'").fetchone()[0],'human stop')
+        db.close()
+    async def test_total_timeout_keeps_admission_busy_until_inflight_driver_drains(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger=server.Ledger(Path(directory)/'pm.sqlite');started=asyncio.Event();cancelled=asyncio.Event();finish=asyncio.Event();calls=[]
+            class Driver:
+                async def ask(self,payload,session,remember,dispatching):
+                    calls.append(payload['turn_id']);remember('owned','https://chatgpt.com/c/owned');dispatching();started.set()
+                    try:await asyncio.Event().wait()
+                    except asyncio.CancelledError:
+                        cancelled.set();await finish.wait();raise
+                async def stop_uncertain(self,session):pass
+            service=server.PromptService(Driver(),ledger,{'a'},request_timeout=.015)
+            payload={'station_id':'a','turn_id':'one','text':'hello'}
+            first=asyncio.create_task(service.submit(payload));await started.wait();await cancelled.wait()
+            with self.assertRaises(server.Refusal) as caught:await service.submit({**payload,'turn_id':'two'})
+            self.assertEqual(caught.exception.code,'browser_busy');self.assertFalse(first.done())
+            finish.set()
+            with self.assertRaises(server.Refusal) as caught:await first
+            self.assertEqual(caught.exception.code,'request_timeout')
+            self.assertEqual(calls,['one']);self.assertEqual(ledger.turn_status('one'),'uncertain')
+            self.assertIsNone(ledger.turn_status('two'))
+            await service.drain()
+
+class TimeoutConfigurationTests(unittest.TestCase):
+    def test_invalid_server_budgets_are_rejected(self):
+        for value in ('nan','inf','0','-1','301'):
+            with self.assertRaises(ValueError):server.PromptService(None,None,{'a'},request_timeout=value)
+    def test_server_total_budget_exceeds_reply_budget_and_precedes_http(self):
+        self.assertEqual(server.PromptService(None,None,{'a'}).request_timeout,230)

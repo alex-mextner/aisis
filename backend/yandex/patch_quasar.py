@@ -52,6 +52,9 @@ for relative, expected in hashes["original"].items():
 # Exact SHA256 preimages above make the source match fail closed.
 subprocess.run(["git", "-C", str(root), "apply", "--unidiff-zero", "--check", str(patch.resolve())], check=True)
 subprocess.run(["git", "-C", str(root), "apply", "--unidiff-zero", str(patch.resolve())], check=True)
+for relative, expected in hashes["fixed"].items():
+    if hashlib.sha256((root/relative).read_bytes()).hexdigest() != expected:
+        raise SystemExit(f"Pinned EOF postimage mismatch: {relative}")
 print("Applied bounded native speech EOF and exactly-once finalization")
 
 # Reassemble complete Ogg packets, including page continuations, before Opus.
@@ -62,4 +65,7 @@ for relative, expected in packet_hashes["original"].items():
         raise SystemExit(f"Pinned Ogg preimage mismatch: {relative}")
 subprocess.run(["git", "-C", str(root), "apply", "--unidiff-zero", "--check", str(packet_patch.resolve())], check=True)
 subprocess.run(["git", "-C", str(root), "apply", "--unidiff-zero", str(packet_patch.resolve())], check=True)
+for relative, expected in packet_hashes["fixed"].items():
+    if hashlib.sha256((root/relative).read_bytes()).hexdigest() != expected:
+        raise SystemExit(f"Pinned Ogg postimage mismatch: {relative}")
 print("Applied complete Ogg packet assembly before Opus decoding")

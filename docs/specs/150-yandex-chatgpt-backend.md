@@ -41,12 +41,19 @@ browser tabs and the existing ChatGPT guardian remain available.
 ## Reliability and privacy
 
 Per-speaker locks prevent simultaneous turns from corrupting one conversation.
+An explicit nonempty speaker allowlist is required before the adapter starts.
 SQLite stores conversation pointers and turn status, never speech transcripts.
 An interrupted turn is marked interrupted after restart and is never resent.
 A browser authorization failure produces an explicit spoken failure. External
 unsolicited events are disabled until separately requested. Runtime identifiers,
 network inventory, tokens, certificates, cookies, and environment files must
 never enter this public repository.
+
+The complete browser turn has a 230-second budget, including preparation and
+up to 170 seconds waiting for a reply. The HTTP client waits 240 seconds and
+the outer adapter waits 250 seconds. A timeout after dispatch leaves the turn
+uncertain and prevents replay. Quasar receives only its required configuration;
+the ChatGPT bridge token and Fish credential stay outside that container.
 
 ## Acceptance and rollout
 
@@ -96,9 +103,9 @@ service until clients with older DHCP leases have aged out.
 ## Ogg/Opus framing integrity
 
 The patched codec reassembles Ogg lacing segments into complete Opus packets,
-including packets larger than255bytes, exact-multiple zero termination and
+including packets larger than 255 bytes, exact-multiple zero termination and
 cross-page continuations. It rejects page sequence/serial discontinuities and
 truncated page framing before decoding. Opus headers are interpreted on packet
-boundaries; the decoder emits48kHz PCM and honors signed header output gain.
+boundaries; the decoder emits 48 kHz PCM and honors signed header output gain.
 Real encoder/decoder tests and the unchanged synthetic Брачо fixture verify this
 boundary separately from physical speaker compatibility.

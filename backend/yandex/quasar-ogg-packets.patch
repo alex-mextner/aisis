@@ -9,18 +9,50 @@
 +      if (position + bodyLength > dataView.byteLength) throw new Error('Truncated Ogg page body')
 --- a/src/codecs/opus-processor.ts
 +++ b/src/codecs/opus-processor.ts
-@@ -15,0 +16,4 @@
+@@ -14,0 +15 @@
++  private pageBytes: Buffer = Buffer.alloc(0)
+@@ -15,0 +17,4 @@
 +  private packetSegments: Buffer[] = []
 +  private packetBytes = 0
 +  private serial: number | null = null
 +  private nextSequence: number | null = null
-@@ -21,2 +25 @@
+@@ -21,3 +26,61 @@
 -    const oggPages = OggParser.parse(audioData)
 -    for (const page of oggPages) {
-+    for (const page of OggParser.parse(audioData)) {
-@@ -28,2 +31,35 @@
--    if (page.pageSequenceNumber === 0) {
--      const head = parseOpusHead(Buffer.concat(page.segments))
+-      await this.handleOpusPage(page)
++    // UniProxy transport messages do not define Ogg page boundaries. Retain
++    // only an incomplete page; completed pages keep the existing packet path.
++    if (audioData.length > 1024 * 1024) throw new Error('Ogg transport frame exceeds voice input limit')
++    const data: Buffer = Buffer.concat([this.pageBytes, audioData])
++    this.pageBytes = Buffer.alloc(0)
++    let offset = 0
++    while (offset < data.length) {
++      const remaining = data.length - offset
++      if (remaining >= 4 && data.readUInt32BE(offset) !== 0x4F676753) throw new Error('Not an Ogg chunk')
++      if (remaining >= 5 && data[offset + 4] !== 0) throw new Error('Wrong Ogg stream structure version')
++      if (remaining < 27) break
++      const count = data[offset + 26]
++      if (remaining < 27 + count) break
++      let length = 27 + count
++      for (let i = 0; i < count; i++) length += data[offset + 27 + i]
++      if (remaining < length) break
++      for (const page of OggParser.parse(data.subarray(offset, offset + length))) {
++        await this.handleOpusPage(page)
++      }
++      offset += length
++    }
++    // Ogg permits at most255 lacing entries of255 bytes, plus282 header bytes.
++    // Copy the remainder so a small partial page never retains a large frame.
++    this.pageBytes = Buffer.from(data.subarray(offset))
++    if (this.pageBytes.length > 65307) throw new Error('Ogg page exceeds format limit')
++  }
++
++  finish (): void {
++    if (this.pageBytes.length > 0) throw new Error('Truncated Ogg page at native EOF')
++    if (this.packetSegments.length > 0) throw new Error('Incomplete Opus packet at native EOF')
++  }
++
++  private async handleOpusPage (page: OggPage): Promise<void> {
 +    if (this.serial !== null && page.streamSerialNumber !== this.serial) {
 +      throw new Error('Multiple logical Opus streams are not supported in one voice input')
 +    }
@@ -49,14 +81,15 @@
 +    }
 +    if (page.flags.lastPage && this.packetSegments.length > 0) {
 +      throw new Error('Incomplete Opus packet at end of Ogg stream')
-+    }
-+  }
-+
+@@ -27,3 +90,4 @@
+-  private async handleOpusPage (page: OggPage): Promise<void> {
+-    if (page.pageSequenceNumber === 0) {
+-      const head = parseOpusHead(Buffer.concat(page.segments))
 +  private async handleOpusPacket (packet: Buffer): Promise<void> {
 +    if (packet.subarray(0, 8).equals(OPUS_HEAD_BUFFER)) {
 +      if (this.encoder !== null) throw new Error('Unexpected second OpusHead')
 +      const head = parseOpusHead(packet)
-@@ -33,3 +69,6 @@
+@@ -33,3 +97,6 @@
 -      this.encoder = new OpusEncoder(head.sampleRate, head.channelCount)
 -
 -      await this.onSampleRate(head.sampleRate)
@@ -66,7 +99,7 @@
 +      this.encoder = new OpusEncoder(decodeRate, head.channelCount)
 +      this.encoder.applyDecoderCTL(4034, head.outputGain) // OPUS_SET_GAIN_REQUEST, signed Q8 dB.
 +      await this.onSampleRate(decodeRate)
-@@ -38,11 +77,6 @@
+@@ -38,11 +105,6 @@
 -    if (page.pageSequenceNumber === 1) {
 -      // skip page
 -      return
@@ -84,7 +117,7 @@
 +    if (packet.subarray(0, 8).equals(Buffer.from('OpusTags'))) return
 +    if (packet.length === 0) throw new Error('Empty Opus audio packet')
 +    await this.onAudioData(this.encoder.decode(packet))
-@@ -63,2 +97,2 @@
+@@ -63,2 +125,2 @@
 -  const outputGain = dataView.getUint16(14, true)
 -  const mappingFamily = dataView.getUint8(16)
 +  const outputGain = dataView.getInt16(16, true)
