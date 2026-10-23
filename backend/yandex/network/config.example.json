@@ -1,0 +1,54 @@
+{
+  "bind_ip": "192.0.2.56",
+  "port": 53,
+  "upstreams": [
+    "198.51.100.30",
+    "198.51.100.40",
+    "198.51.100.50"
+  ],
+  "timeout": 1.5,
+  "enabled": false,
+  "target": {
+    "ip": "192.0.2.44",
+    "mac": "02:00:00:00:00:44"
+  },
+  "route_ip": "192.0.2.56",
+  "domains": [
+    "quasar.yandex.net",
+    "quasar.yandex.ru",
+    "scbh.yandex.net"
+  ],
+  "ttl": 5,
+  "arp_file": "/proc/net/arp",
+  "router": {
+    "host": "192.0.2.1",
+    "server_mac": "02:00:00:00:00:56",
+    "source_path": "/path/to/router-cli"
+  },
+  "admin_probe_ips": [
+    "192.0.2.39",
+    "192.0.2.56"
+  ],
+  "compat_domains": [
+    "quasar.yandex.net",
+    "quasar.yandex.ru",
+    "scbh.yandex.net"
+  ],
+  "voice_domains": [
+    "uniproxy.alice.yandex.net"
+  ],
+  "voice_targets": [
+    {
+      "ip": "192.0.2.14",
+      "mac": "02:00:00:00:00:14"
+    },
+    {
+      "ip": "192.0.2.15",
+      "mac": "02:00:00:00:00:15"
+    },
+    {
+      "ip": "192.0.2.44",
+      "mac": "02:00:00:00:00:44"
+    }
+  ]
+}

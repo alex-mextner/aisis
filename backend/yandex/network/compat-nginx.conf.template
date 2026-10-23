@@ -1,0 +1,27 @@
+worker_processes auto;
+# Upstream errors can include request URLs; retain no HTTP/error payload logs.
+error_log /dev/null crit;
+events { worker_connections 1024; }
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    sendfile on;
+    # Deliberately omit URI, query, headers, bodies, cookies and authorization.
+    log_format transport '$remote_addr $ssl_server_name $ssl_protocol $status $upstream_status';
+    access_log /dev/stdout transport;
+    # Explicit original ISP upstreams: never use the relay receiving scoped answers.
+    resolver @@ORIGINAL_DNS@@ ipv6=off valid=30s;
+    resolver_timeout 3s;
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 120s;
+    proxy_send_timeout 120s;
+    # One owned speaker plus explicitly configured administration probes.
+@@TARGET_ALLOW_RULES@@
+@@ADMIN_ALLOW_RULES@@
+    deny all;
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        '' close;
+    }
+    include /app/generated/configs/*.conf;
+}

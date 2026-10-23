@@ -1,0 +1,12 @@
+{
+  "original": {
+    "src/backend/backend.ts": "dcac702221b59841898db71fc6f7f4c5bf176d707a2285cb04a0f561adb18f78",
+    "src/backend/stt/gigaam.ts": "dd864abee78ed9b6b4dd461ab02daadb77bdac07c42f63900ca032a3f5de7a2d",
+    "src/routers/uniproxy/voice-input-handler.ts": "bac48d61741d3eff57e2e383818f46ef344414d4b06dbe3c7380039ac1994043"
+  },
+  "fixed": {
+    "src/backend/backend.ts": "c4c56397b0707e269e5a9e629d1c3c4ef3b3d49534168fae648f83b2d9373e24",
+    "src/backend/stt/gigaam.ts": "3139150fc4aa5538780c0e4f9190f298058c651360c91729a084e13a8121a5fb",
+    "src/routers/uniproxy/voice-input-handler.ts": "9f51dc786c4387b96ff1f071fa55ba136f0ab9b04367d891bcdbbebcc838dfd1"
+  }
+}

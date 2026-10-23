@@ -1,0 +1,241 @@
+--- a/src/backend/backend.ts
++++ b/src/backend/backend.ts
+@@ -63,0 +64,3 @@
++  // Optional backends may finish synchronously; streaming backends override.
++  async finish (): Promise<void> {}
++
+--- a/src/backend/stt/gigaam.ts
++++ b/src/backend/stt/gigaam.ts
+@@ -17,0 +18,4 @@
++  private finalSeen = false
++  private finishPromise: Promise<void> | null = null
++  private resolveFinish: (() => void) | null = null
++  private rejectFinish: ((error: Error) => void) | null = null
+@@ -27 +31 @@
+-      if (this.stopped) return
++      if (this.stopped || this.finalSeen) return
+@@ -30,0 +35,4 @@
++        if (response.end_of_utt) {
++          this.finalSeen = true
++          this.resolveFinish?.()
++        }
+@@ -38,0 +47 @@
++      if (!this.finalSeen) this.rejectFinish?.(new Error('STT closed before final result'))
+@@ -41,0 +51,17 @@
++  async finish (): Promise<void> {
++    if (this.finalSeen) return
++    if (this.finishPromise) return this.finishPromise
++    if (this.stopped) throw new Error('STT session already closed')
++    this.finishPromise = new Promise<void>((resolve, reject) => {
++      const timer = setTimeout(() => {
++        reject(new Error('STT final result timed out'))
++        this.close()
++      }, 40000)
++      this.resolveFinish = () => { clearTimeout(timer); resolve() }
++      this.rejectFinish = error => { clearTimeout(timer); reject(error) }
++    })
++    // Normal native EOF is explicit; websocket close remains immediate cancel.
++    void this.send(JSON.stringify({ type: 'finish' }), false)
++    await this.finishPromise
++  }
++
+@@ -43 +68,0 @@
+-    if (this.stopped) return
+@@ -44,0 +70 @@
++    if (!this.finalSeen) this.rejectFinish?.(new Error('STT session cancelled'))
+--- a/src/routers/uniproxy/voice-input-handler.ts
++++ b/src/routers/uniproxy/voice-input-handler.ts
+@@ -61,0 +62,5 @@
++  private epoch = 0
++  private active = false
++  private finishing = false
++  private starting: Promise<void> | null = null
++  private finalizing: Promise<void> | null = null
+@@ -67,0 +73,6 @@
++    // Cancellation invalidates every callback and in-flight finalization first.
++    this.epoch += 1
++    this.active = false
++    this.finishing = false
++    this.starting = null
++    this.finalizing = null
+@@ -75 +85,0 @@
+-
+@@ -81,0 +92,2 @@
++    if (!this.active || this.finishing) return
++    const epoch = this.epoch
+@@ -83,0 +96 @@
++      if (!this.active || epoch !== this.epoch) return
+@@ -85,2 +98,4 @@
+-        await Promise.all([this.audioMetadataSession.processChunk(data.buffer),
+-          this.sttSession.transcribeChunk(data.buffer)])
++        await Promise.all([
++          this.audioMetadataSession.processChunk(data.buffer),
++          this.sttSession.transcribeChunk(data.buffer)
++        ])
+@@ -96 +110,0 @@
+-    this.logger.debug('VoiceInputHandler received Cancel')
+@@ -101 +114,0 @@
+-    this.logger.debug('VoiceInputHandler received Input')
+@@ -103 +116,7 @@
+-
++    this.active = true
++    const epoch = this.epoch
++    this.starting = this.start(request, epoch)
++    await this.starting
++  }
++
++  private async start (request: VoiceInputEvent, epoch: number): Promise<void> {
+@@ -111 +129,0 @@
+-
+@@ -114 +131,0 @@
+-
+@@ -121,4 +138,4 @@
+-      this.emit('error', {
+-        error
+-      })
+-      this.close()
++      if (epoch === this.epoch && this.active) {
++        this.emit('error', { error })
++        this.close()
++      }
+@@ -127 +144,5 @@
+-
++    if (epoch !== this.epoch || !this.active) {
++      audioMetadataSession.close()
++      sttSession.close()
++      return
++    }
+@@ -128,0 +150 @@
++      if (epoch !== this.epoch || !this.active || this.sttSession !== sttSession) return
+@@ -130,12 +152,2 @@
+-      this.emit('transcribed', {
+-        text
+-      })
+-      this.logger.debug(`VoiceInputHandler transcribed: ${text}`)
+-      if (endOfUtt) {
+-        this.stop().then(() => {
+-          this.transcribeFinished()
+-        }).catch(error => {
+-          this.emit('error', error)
+-          this.close()
+-        })
+-      }
++      this.emit('transcribed', { text })
++      if (endOfUtt) void this.finalize(epoch)
+@@ -143,3 +154,0 @@
+-
+-    this.logger.debug('VoiceInputHandler streams created')
+-
+@@ -148,10 +157,5 @@
+-      while (this.audioDataQueue.length > 0) {
+-        const copy = [...this.audioDataQueue]
+-
+-        for (const data of copy) {
+-          await Promise.all([audioMetadataSession.processChunk(data), sttSession.transcribeChunk(data)])
+-        }
+-        this.logger.debug(`Sent ${this.audioDataQueue.length} chunks`)
+-        this.audioDataQueue = this.audioDataQueue.slice(copy.length)
+-      }
+-
++      if (epoch !== this.epoch || !this.active) {
++        audioMetadataSession.close()
++        sttSession.close()
++        return
++      }
+@@ -159,0 +164,5 @@
++      while (this.audioDataQueue.length > 0) {
++        const data = this.audioDataQueue.shift()!
++        await Promise.all([audioMetadataSession.processChunk(data), sttSession.transcribeChunk(data)])
++        if (epoch !== this.epoch || !this.active) return
++      }
+@@ -163,2 +171,0 @@
+-
+-    this.logger.debug('VoiceInputHandler streaming started')
+@@ -168,3 +175,2 @@
+-    this.logger.debug('VoiceInputHandler received Finish')
+-    await this.stop()
+-    this.transcribeFinished()
++    // Native StreamControl.Close means normal EOF, never transport cancellation.
++    await this.finalize(this.epoch)
+@@ -174,33 +180,48 @@
+-    this.logger.debug('VoiceInputHandler received Metadata')
+-    this.audioMetadata = {
+-      ...this.audioMetadata,
+-      ...request.metadata
+-    }
+-  }
+-
+-  private async stop (): Promise<void> {
+-    this.audioMetadata = {
+-      ...this.audioMetadata,
+-      ...(await this.audioMetadataSession?.finish())
+-    }
+-    this.audioMetadataSession = null
+-    this.sttSession?.close()
+-    this.sttSession = null
+-    this.audioDataQueue = []
+-    this.voiceSpan?.setAttribute('endReason', 'finish')
+-    this.voiceSpan?.setAttribute('text', this.lastTranscribeResult)
+-    this.voiceSpan?.setAttribute('metadata', JSON.stringify(this.audioMetadata, undefined, 2))
+-    this.voiceSpan?.end()
+-    this.voiceSpan = null
+-  }
+-
+-  private transcribeFinished (): void {
+-    const audioMetadata = this.audioMetadata
+-    this.audioMetadata = {}
+-    this.logger.debug(`VoiceInputHandler transcribe finished: ${this.lastTranscribeResult}`)
+-    this.emit('finish', {
+-      metadata: audioMetadata,
+-      text: this.lastTranscribeResult
+-    })
+-  }
+-}
++    if (this.active) this.audioMetadata = { ...this.audioMetadata, ...request.metadata }
++  }
++
++  private finalize (epoch: number): Promise<void> {
++    if (!this.active || epoch !== this.epoch) return Promise.resolve()
++    if (this.finalizing) return this.finalizing
++    this.finishing = true
++    this.finalizing = this.finishOnce(epoch)
++    return this.finalizing
++  }
++
++  private async finishOnce (epoch: number): Promise<void> {
++    try {
++      await this.starting
++      await this.audioSendingLock.acquire()
++      try {
++        if (epoch !== this.epoch || !this.active || !this.sttSession) return
++        const stt = this.sttSession
++        const metadataSession = this.audioMetadataSession
++        // finish() flushes recognizer input and waits for its bounded final result.
++        // The callback updates lastTranscribeResult before this await resumes.
++        await stt.finish()
++        if (epoch !== this.epoch || !this.active || this.sttSession !== stt) return
++        const metadata = await metadataSession?.finish()
++        if (epoch !== this.epoch || !this.active || this.sttSession !== stt) return
++        const text = this.lastTranscribeResult
++        const audioMetadata = { ...this.audioMetadata, ...metadata }
++        this.active = false
++        this.sttSession = null
++        this.audioMetadataSession = null
++        this.audioDataQueue = []
++        stt.close()
++        this.voiceSpan?.setAttribute('endReason', 'finish')
++        this.voiceSpan?.end()
++        this.voiceSpan = null
++        this.audioMetadata = {}
++        this.emit('finish', { metadata: audioMetadata, text })
++      } finally {
++        this.audioSendingLock.release()
++      }
++    } catch (error) {
++      if (epoch === this.epoch && this.active) {
++        this.emit('error', { error })
++        this.close()
++      }
++    }
++  }
++}

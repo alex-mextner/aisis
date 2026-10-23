@@ -1,0 +1,10 @@
+{
+  "original": {
+    "src/codecs/ogg-parser.ts": "0947d71ac93f5a98fb65e00c5106e6c74ecd4ffc48b6ae32d27d25d3b87b397d",
+    "src/codecs/opus-processor.ts": "1c16267bd67494d44f4cef80106f012354111f6991696b16b8e665cdcc6b1ff2"
+  },
+  "fixed": {
+    "src/codecs/ogg-parser.ts": "ea9781e66f1aaa6bbfbce839edbb89bd19f732651de2e05b9f8b4739e1f08d56",
+    "src/codecs/opus-processor.ts": "24898e5f6d846b75ed1b4e4778bfdef688839fefa14c73e144c7b412a261871b"
+  }
+}

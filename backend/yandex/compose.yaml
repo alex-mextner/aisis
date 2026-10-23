@@ -1,0 +1,71 @@
+name: aisis-yandex
+services:
+  postgres:
+    image: postgres:17.6-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: quasar
+      POSTGRES_DB: quasar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in private env}
+    ports:
+      - "127.0.0.1:31119:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U quasar -d quasar"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  quasar:
+    image: aisis-quasar:a983cda
+    build:
+      context: ${AISIS_QUASAR_SOURCE:?run prepare-upstream.sh}
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - ${AISIS_RUNTIME_ENV:?private environment file required}
+    environment:
+      PORT: "31115"
+      API_PORT: "31116"
+      POSTGRES_URL: "postgres://quasar:${POSTGRES_PASSWORD}@127.0.0.1:31119/quasar"
+      PROCESSOR_BASIC_URL: "http://127.0.0.1:31117/processor"
+      TTS_OPENAI_BASE_URL: "http://127.0.0.1:31117/v1"
+      TTS_OPENAI_MODEL: bracho
+      TTS_OPENAI_VOICE: Брачо
+      TTS_OPENAI_SPEED: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+  https-proxy:
+    image: aisis-yandex-https:3b902d6
+    build:
+      context: ${AISIS_PROXY_SOURCE:-/nonexistent/aisis-https-proxy}
+    profiles: [speaker-tls]
+    restart: unless-stopped
+    environment:
+      YANDEX_UPSTREAM_URL: http://host.docker.internal:31115
+      NGINX_ENTRYPOINT_LOCAL_RESOLVERS: "true"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "${AISIS_SPEAKER_BIND_IP:-127.0.0.1}:80:80"
+      - "${AISIS_SPEAKER_BIND_IP:-127.0.0.1}:443:443"
+  streaming-stt:
+    image: aisis-gigaam:e1770f1-cpu
+    build:
+      context: ${AISIS_STT_SOURCE:-/nonexistent/aisis-streaming-stt}
+      dockerfile: Dockerfile.cpu
+    profiles: [streaming-stt]
+    restart: unless-stopped
+    environment:
+      GIGAAM_DEVICE: cpu
+      GIGAAM_MODEL_NAME: v3_e2e_rnnt
+      GIGAAM_DOWNLOAD_ROOT: /app/.cache/gigaam
+      ASR_STREAMING_MODE: streaming
+    ports:
+      - "127.0.0.1:31121:8080"
+    volumes:
+      - gigaam-cache:/app/.cache/gigaam
+volumes:
+  postgres-data:
+  gigaam-cache:

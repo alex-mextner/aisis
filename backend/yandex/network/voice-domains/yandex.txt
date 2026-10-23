@@ -1,0 +1,5 @@
+unused.invalid:1
+uniproxy.alice.yandex.net
+!quasar.yandex.net
+!quasar.yandex.ru
+!scbh.yandex.net

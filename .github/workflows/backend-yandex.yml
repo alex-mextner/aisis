@@ -1,0 +1,57 @@
+name: yandex-backend
+on:
+  pull_request:
+    paths:
+      - backend/yandex/**
+      - .github/workflows/backend-yandex.yml
+  push:
+    branches: [main]
+    paths:
+      - backend/yandex/**
+      - .github/workflows/backend-yandex.yml
+permissions:
+  contents: read
+concurrency:
+  group: yandex-backend-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  protocol-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/yandex/requirements.txt
+      - name: Install local protocol dependencies
+        run: |
+          python -m pip install --only-binary=:all: -r backend/yandex/requirements.txt
+      - name: Verify protocol behavior, station isolation and no replay
+        run: python -m unittest discover -s backend/yandex -p 'test_*.py' -v
+      - name: Verify source-scoped DNS and network guard behavior
+        if: ${{ hashFiles('backend/yandex/network/test_*.py') != '' }}
+        run: python -m unittest discover -s backend/yandex/network -p 'test_*.py' -v
+      - name: Check deployment shell syntax
+        run: bash -n backend/yandex/install-host.sh backend/yandex/prepare-upstream.sh backend/yandex/prepare-proxy.sh backend/yandex/prepare-stt.sh
+
+  quasar-native-eof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prepare exact upstream and reviewed compatibility patches
+        env:
+          AISIS_QUASAR_SOURCE: ${{ runner.temp }}/aisis-quasar
+        run: bash backend/yandex/prepare-upstream.sh
+      - name: Build the pinned Quasar runtime
+        run: docker build -t aisis-quasar:a983cda "${{ runner.temp }}/aisis-quasar"
+      - name: Verify native EOF, VAD races and cancellation in actual handlers
+        env:
+          AISIS_QUASAR_SOURCE: ${{ runner.temp }}/aisis-quasar
+        run: bash backend/yandex/test-quasar-native.sh

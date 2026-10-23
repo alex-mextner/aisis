@@ -1,0 +1,17 @@
+[Unit]
+Description=AISIS private tunnel to existing Home Assistant speech recognizer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/aisis-yandex/runtime.env
+ExecStart=/usr/bin/ssh -N -T -oBatchMode=yes -oStrictHostKeyChecking=yes -oExitOnForwardFailure=yes -oServerAliveInterval=15 -oServerAliveCountMax=3 -L 127.0.0.1:31122:${AISIS_WYOMING_REMOTE_HOST}:${AISIS_WYOMING_REMOTE_PORT} ${AISIS_WYOMING_SSH_TARGET}
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=10
+UMask=0077
+
+[Install]
+WantedBy=default.target
