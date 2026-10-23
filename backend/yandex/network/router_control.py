@@ -67,7 +67,7 @@ def mode_domains(cfg,selected):
 
 def mode(path,enabled,selected='forwarding'):
     from dns_forwarder import validate_config
-    cfg=validate_config(json.loads(Path(path).read_text()))
+    cfg=validate_config(json.loads(Path(path).read_text()),for_override=enabled)
     cfg['enabled']=enabled
     cfg['domains']=mode_domains(cfg,selected)
     cfg['mode']=selected
@@ -154,7 +154,7 @@ def main():
     p.add_argument('--apply',action='store_true',help='explicitly execute; omitted means dry run')
     args=p.parse_args()
     from dns_forwarder import validate_config
-    cfg=validate_config(json.loads(Path(args.config).read_text()))
+    cfg=validate_config(json.loads(Path(args.config).read_text()),for_override=args.action in ('prepare','apply-dns','compat','voice'))
     host=cfg['router']['host'];bind=cfg['bind_ip'];server_mac=cfg['router']['server_mac'].lower()
     if args.action in ('forwarding','compat','voice'):
         if args.apply:mode(args.config,args.action!='forwarding',args.action)

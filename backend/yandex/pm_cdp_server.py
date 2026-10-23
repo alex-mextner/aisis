@@ -164,9 +164,10 @@ class PromptService:
                 self.ledger.mark(payload['turn_id'],'dispatching')
             try:
                 try:
-                    async with asyncio.timeout(self.request_timeout):
+                    async with asyncio.timeout(self.request_timeout) as deadline:
                         result=await self.driver.ask(payload,session,remember,dispatching)
                 except TimeoutError:
+                    if not deadline.expired(): raise
                     # Cancellation cannot abandon protected_dispatch: shared pm
                     # drains an invocation before propagating cancellation. Never
                     # replay a send whose outcome is unknown.

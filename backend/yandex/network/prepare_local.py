@@ -17,7 +17,7 @@ from dns_forwarder import validate_config
 
 
 def render(cfg,mode='compat'):
-    validate_config(cfg)
+    validate_config(cfg,for_override=True)
     for ip in cfg.get('admin_probe_ips',[]):ipaddress.IPv4Address(ip)
     source=Path(__file__).with_name('compat-nginx.conf.template').read_text()
     targets=cfg.get('voice_targets',[cfg['target']]) if mode=='voice' else [cfg['target']]
@@ -42,7 +42,7 @@ def main():
     p.add_argument('--apply',action='store_true',help='actually arm timer; without this print its command')
     args=p.parse_args()
     path=Path(args.config).expanduser().resolve()
-    cfg=validate_config(json.loads(path.read_text()))
+    cfg=validate_config(json.loads(path.read_text()),for_override=True)
     # Bind the rollback to this deployed network stack, outside the public checkout.
     cfg['network_compose']=str(Path(__file__).resolve().parent.parent/'compose.network.yaml')
     write_private(path,json.dumps(cfg,indent=2)+'\n')

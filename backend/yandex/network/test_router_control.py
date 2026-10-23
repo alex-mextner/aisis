@@ -4,7 +4,10 @@ from unittest.mock import patch
 import subprocess
 import contextlib
 import io
+import json
 import shlex
+import sys
+import tempfile
 from pathlib import Path
 spec=importlib.util.spec_from_file_location('router_control',Path(__file__).parent/'router_control.py')
 mod=importlib.util.module_from_spec(spec)
@@ -59,4 +62,46 @@ class RouterSafetyTests(unittest.TestCase):
         for key,value in [('host','192.0.2.2'),('bind_ip','192.0.2.1')]:
             snap=self.snapshot();snap[key]=value
             with self.assertRaises(ValueError):mod.validate_snapshot(snap,self.cfg)
+
+
+class LegacyTopologyTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path=Path(self.tmp.name)/'config.json'
+        self.cfg=json.loads(Path(__file__).with_name('config.example.json').read_text())
+        self.cfg.update(route_ip='192.0.2.57',enabled=True,network_compose='/private/compose.network.yaml')
+        self.path.write_text(json.dumps(self.cfg))
+    def test_asymmetric_config_can_disable_overrides_and_restore_original_dns(self):
+        snapshot=Path(self.tmp.name)/'router-before.json'
+        original={'dns1':'198.51.100.30','dns2':'198.51.100.40','dns3':'198.51.100.50'}
+        snapshot.write_text(json.dumps({'host':'192.0.2.1','bind_ip':'192.0.2.56','dns':original,'lease_seconds':3600}))
+        before=snapshot.read_bytes()
+        current=dict.fromkeys(original,'192.0.2.56')
+        class Driver:
+            def read_area(self,area):return dict(current)
+            def plan_area(self,area,changes):return changes
+        class CLI:
+            def run_plan(self,driver,plan,args):
+                if not args.dry_run:current.update(plan)
+        argv=['router_control.py','rollback','--apply','--config',str(self.path),'--snapshot',str(snapshot)]
+        with patch.object(sys,'argv',argv), patch.object(mod,'router_session',return_value=contextlib.nullcontext((Driver(),CLI()))), patch.object(mod,'stop_gateways',return_value=True), patch.object(mod.signal,'signal'), patch.object(mod.signal,'alarm'), contextlib.redirect_stdout(io.StringIO()):
+            try:mod.main()
+            except ValueError as exc:self.fail(f'Legacy topology must remain eligible for rollback: {exc}')
+        self.assertFalse(json.loads(self.path.read_text())['enabled'])
+        self.assertEqual(current,original)
+        self.assertEqual(snapshot.read_bytes(),before)
+        self.assertGreaterEqual(json.loads(snapshot.with_name('forwarding-retention.json').read_text())['seconds'],3900)
+    def test_asymmetric_config_refuses_compat_and_voice_without_writing(self):
+        before=self.path.read_bytes()
+        for selected in ['compat','voice']:
+            with self.subTest(mode=selected), self.assertRaises(ValueError):mod.mode(self.path,True,selected)
+            self.assertEqual(self.path.read_bytes(),before)
+    def test_asymmetric_config_refuses_preparation_before_writing_files(self):
+        before=self.path.read_bytes()
+        result=subprocess.run([sys.executable,str(Path(__file__).with_name('prepare_local.py')),'--config',str(self.path)],capture_output=True,text=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertEqual(self.path.read_bytes(),before)
+        self.assertFalse(self.path.with_name('compat-nginx.conf').exists())
+        self.assertFalse(self.path.with_name('voice-nginx.conf').exists())
 if __name__=='__main__':unittest.main()

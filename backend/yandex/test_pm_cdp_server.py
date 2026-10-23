@@ -305,7 +305,6 @@ class FakeDriver:
         except asyncio.CancelledError:
             self.cancelled=True; raise
 
-if __name__=='__main__': unittest.main()
 
 @unittest.skipUnless(shutil.which('node'),'Node is required for the injected JS boundary')
 class SendReadinessTests(unittest.TestCase):
@@ -417,6 +416,26 @@ class DeadlineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.ledger.turn_status('one'),'uncertain')
         self.assertEqual(stops,['https://chatgpt.com/c/a'])
         with self.assertRaises(server.Refusal):await self.service.submit(self.request('next'))
+    async def test_inner_timeout_before_dispatch_is_failed_without_deadline_stop(self):
+        stops=[]
+        async def ask(payload,session,remember,dispatching):
+            await asyncio.wait_for(asyncio.Event().wait(),timeout=.005)
+        async def stop(session):stops.append(session)
+        self.driver.ask=ask;self.driver.stop_uncertain=stop
+        with self.assertRaises(TimeoutError):await self.service.submit(self.request())
+        self.assertEqual(self.ledger.turn_status('one'),'failed')
+        self.assertEqual(stops,[])
+    async def test_inner_timeout_after_dispatch_is_uncertain_without_deadline_stop(self):
+        stops=[]
+        async def ask(payload,session,remember,dispatching):
+            remember('owned','https://chatgpt.com/c/a');dispatching()
+            await asyncio.wait_for(asyncio.Event().wait(),timeout=.005)
+        async def stop(session):stops.append(session)
+        self.driver.ask=ask;self.driver.stop_uncertain=stop
+        with self.assertRaises(TimeoutError):await self.service.submit(self.request())
+        self.assertEqual(self.ledger.turn_status('one'),'uncertain')
+        self.assertEqual(stops,[])
+        with self.assertRaises(server.Refusal):await self.service.submit(self.request('next'))
     async def test_no_dispatch_history_proof_rejects_every_dispatched_state(self):
         self.ledger.reserve(self.request())
         self.assertTrue(self.ledger.can_recreate_homepage('a'))
@@ -479,3 +498,5 @@ class TimeoutConfigurationTests(unittest.TestCase):
             with self.assertRaises(ValueError):server.PromptService(None,None,{'a'},request_timeout=value)
     def test_server_total_budget_exceeds_reply_budget_and_precedes_http(self):
         self.assertEqual(server.PromptService(None,None,{'a'}).request_timeout,230)
+
+if __name__=='__main__': unittest.main()

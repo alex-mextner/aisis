@@ -52,3 +52,5 @@ class TimeoutTests(unittest.TestCase):
         for value in ('nan','inf','0','-1','301'):
             with patch.dict(os.environ,{'AISIS_PM_HTTP_TIMEOUT':value}):
                 with self.assertRaises(ValueError):http_timeout()
+
+if __name__=='__main__': unittest.main()

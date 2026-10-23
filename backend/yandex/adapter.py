@@ -9,6 +9,7 @@ import asyncio
 import hmac
 import json
 import logging
+import math
 import os
 from pathlib import Path
 import signal
@@ -91,6 +92,21 @@ class Adapter:
         self.allowed = {station.strip() for station in self.env.get("AISIS_ALLOWED_STATIONS", "").split(",") if station.strip()}
         if not self.allowed:
             raise ValueError("AISIS_ALLOWED_STATIONS must contain at least one speaker ID")
+        self.chatgpt_timeout: float | None = None
+        if self.env.get("AISIS_PM_URL"):
+            keys = ("AISIS_PM_REPLY_TIMEOUT", "AISIS_PM_REQUEST_TIMEOUT",
+                "AISIS_PM_HTTP_TIMEOUT", "AISIS_CHATGPT_TIMEOUT")
+            try:
+                budgets = [float(self.env.get(key, default)) for key, default in
+                    zip(keys, ("170", "230", "240", "250"))]
+            except ValueError:
+                raise ValueError("PM timeout settings must be finite positive numbers") from None
+            if not all(math.isfinite(value) and value > 0 for value in budgets):
+                raise ValueError("PM timeout settings must be finite positive numbers")
+            if not all(left < right for left, right in zip(budgets, budgets[1:])):
+                raise ValueError("PM timeout order must be AISIS_PM_REPLY_TIMEOUT < "
+                    "AISIS_PM_REQUEST_TIMEOUT < AISIS_PM_HTTP_TIMEOUT < AISIS_CHATGPT_TIMEOUT")
+            self.chatgpt_timeout = budgets[-1]
         self.store = Store(self.env.get("AISIS_STATE_DB", str(Path.home()/".local/state/aisis-yandex/adapter.sqlite3")))
         self.command = json.loads(self.env.get("AISIS_CHATGPT_COMMAND", "[]"))
         if not isinstance(self.command, list) or not all(isinstance(x, str) for x in self.command):
@@ -129,6 +145,7 @@ class Adapter:
             try:
                 result = await run_command(self.command, {"station_id": station, "text": text,
                     "conversation_id": self.store.conversation(station), "turn_id": turn},
+                    self.chatgpt_timeout if self.chatgpt_timeout is not None else
                     float(self.env.get("AISIS_CHATGPT_TIMEOUT", "250")))
                 self.store.finish(turn, "complete", station, result.get("conversation_id"))
                 return result["text"].strip()
@@ -153,6 +170,8 @@ class Adapter:
                     raise TurnError("missing_station_id")
                 if station not in self.allowed:
                     raise TurnError("station_not_allowed")
+                if data.get("isExternalEvent"):
+                    raise TurnError("external_events_disabled")
                 if isinstance(text, str) and not text.strip():
                     if not ws.closed:
                         await ws.send_json({"type": "partialResponse", "data": {"text": NO_SPEECH_REPLY,
@@ -160,8 +179,6 @@ class Adapter:
                     return
                 if not isinstance(text, str) or len(text) > 16000:
                     raise TurnError("invalid_text")
-                if data.get("isExternalEvent"):
-                    raise TurnError("external_events_disabled")
                 reply = await self.turn(station, text)
             except asyncio.CancelledError:
                 raise

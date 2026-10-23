@@ -17,9 +17,10 @@ import time
 from pathlib import Path
 
 
-def validate_config(cfg):
+def validate_config(cfg,*,for_override=False):
     own=ipaddress.IPv4Address(cfg['bind_ip'])
-    if ipaddress.IPv4Address(cfg['route_ip'])!=own:
+    route=ipaddress.IPv4Address(cfg['route_ip'])
+    if for_override and route!=own:
         raise ValueError('route_ip must equal bind_ip for this single-host stack')
     ipaddress.IPv4Address(cfg['target']['ip'])
     if not re.fullmatch(r'(?:[0-9a-f]{2}:){5}[0-9a-f]{2}',cfg['target']['mac'].lower()):
@@ -80,7 +81,7 @@ def mac_matches(client_ip,cfg,expected_mac=None):
 
 
 def override_response(packet,client_ip,cfg):
-    if not cfg.get('enabled',False):return None
+    if not cfg.get('enabled',False) or cfg['route_ip']!=cfg['bind_ip']:return None
     target=next((t for t in selected_targets(cfg) if t['ip']==client_ip),None)
     if target is None or not mac_matches(client_ip,cfg,target['mac']):return None
     question=parse_question(packet)
@@ -220,7 +221,7 @@ def main():
     with UDPServer(bind,DNSUDP) as udp,TCPServer(bind,DNSTCP) as tcp:
         udp.relay=tcp.relay=relay
         for server in [udp,tcp]:threading.Thread(target=server.serve_forever,daemon=True).start()
-        print(json.dumps({'event':'dns_ready','bind_ip':bind[0],'port':bind[1],'override_enabled':relay.cfg.get('enabled',False)}),flush=True)
+        print(json.dumps({'event':'dns_ready','bind_ip':bind[0],'port':bind[1],'override_enabled':relay.cfg.get('enabled',False) and relay.cfg['route_ip']==relay.cfg['bind_ip']}),flush=True)
         while True:
             time.sleep(30)
             with relay.lock:counts=dict(relay.counts)

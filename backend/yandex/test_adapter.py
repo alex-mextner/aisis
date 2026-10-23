@@ -42,6 +42,46 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                     Adapter({"AISIS_STATE_DB": path, "AISIS_ALLOWED_STATIONS": value})
                 self.assertFalse(Path(path).exists())
 
+    async def test_direct_pm_rejects_preserved_old_outer_timeout_and_invalid_budgets(self):
+        cases = [
+            {"AISIS_CHATGPT_TIMEOUT": "180"},
+            {"AISIS_PM_REPLY_TIMEOUT": "nan"},
+            {"AISIS_PM_HTTP_TIMEOUT": "inf"},
+            {"AISIS_PM_REQUEST_TIMEOUT": "0"},
+            {"AISIS_PM_REPLY_TIMEOUT": "-1"},
+            {"AISIS_PM_HTTP_TIMEOUT": "230"},
+            {"AISIS_PM_REQUEST_TIMEOUT": "invalid"},
+        ]
+        for index, settings in enumerate(cases):
+            with self.subTest(settings=settings):
+                path = self.tmp.name + f"/invalid-budget-{index}.db"
+                with self.assertRaisesRegex(ValueError, "timeout|TIMEOUT"):
+                    Adapter({"AISIS_STATE_DB": path, "AISIS_ALLOWED_STATIONS": "a",
+                        "AISIS_PM_URL": "http://127.0.0.1:31118/turn", **settings})
+                self.assertFalse(Path(path).exists())
+
+    async def test_direct_pm_accepts_coherent_defaults(self):
+        adapter = Adapter({"AISIS_STATE_DB": self.tmp.name + "/valid-budget.db",
+            "AISIS_ALLOWED_STATIONS": "a", "AISIS_PM_URL": "http://127.0.0.1:31118/turn"})
+        adapter.store.db.close()
+
+    async def test_custom_command_without_pm_url_keeps_independent_outer_timeout(self):
+        adapter = Adapter({"AISIS_STATE_DB": self.tmp.name + "/custom-timeout.db",
+            "AISIS_ALLOWED_STATIONS": "a", "AISIS_CHATGPT_TIMEOUT": "180"})
+        adapter.store.db.close()
+
+    async def test_blank_external_event_is_rejected_before_empty_speech_reply(self):
+        async def turn(*args):
+            self.fail("External event reached ChatGPT")
+        self.app.turn = turn
+        ws = await self.client.ws_connect("/processor")
+        await ws.send_json({"type": "process", "data": {"isExternalEvent": True,
+            "text": "  ", "metadata": {"stationId": "a"}}})
+        response = await ws.receive_json(timeout=1)
+        await ws.close()
+        self.assertEqual(response["data"]["text"], ERROR_REPLY)
+        self.assertEqual(self.app.store.db.execute("SELECT count(*) FROM turns").fetchone()[0], 0)
+
     async def test_empty_recognition_asks_to_repeat_without_chatgpt_or_turn_record(self):
         async def turn(*args):
             self.fail("Empty recognition reached ChatGPT")

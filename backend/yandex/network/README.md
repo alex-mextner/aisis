@@ -16,7 +16,9 @@ Copy `config.example.json` to a private directory and replace all documentation 
 synthetic MACs. Set the router host, existing router-cli checkout path, server MAC, target
 speaker IP/MAC, explicit original DNS upstreams, and administration probe IPs. Keep `enabled`
 false initially. The `bind_ip` is the DNS relay's stable LAN address; `route_ip` is the TLS gateway.
-They must be equal for this single-host stack because Compose binds the TLS ports to `bind_ip`.
+They must be equal when preparing or enabling this single-host stack because Compose binds
+the TLS ports to `bind_ip`. Older configurations with different addresses still support
+ordinary DNS forwarding and rollback; the relay never enables overrides for those addresses.
 Do not use loopback/self DNS as upstreams. Keep the router's existing DHCP pool and lease time.
 
 Run `python3 network/prepare_local.py --config /absolute/private/config.json` from the parent

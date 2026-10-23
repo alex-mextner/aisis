@@ -152,6 +152,15 @@ adapter subprocess. These nested limits let the server return a bounded failure
 before its callers time out. A protected dispatch already executing still drains
 before cancellation is resolved; an uncertain send never becomes a retry.
 
+When upgrading, the installer preserves the private `runtime.env`. Update all
+four timeout settings together: `AISIS_PM_REPLY_TIMEOUT=170`,
+`AISIS_PM_REQUEST_TIMEOUT=230`, `AISIS_PM_HTTP_TIMEOUT=240`, and
+`AISIS_CHATGPT_TIMEOUT=250`. The old outer value of180s is incompatible with the
+new browser budget. When `AISIS_PM_URL` is configured, the adapter refuses
+startup unless all four values are finite, positive, and strictly ordered as
+reply < request < HTTP < adapter. Custom commands without `AISIS_PM_URL` retain
+their independent timeout configuration.
+
 
 ## Native speech completion and cancellation
 

@@ -1,5 +1,6 @@
 import importlib.util
 import ipaddress
+import json
 import socket
 import socketserver
 import struct
@@ -73,10 +74,25 @@ class ScopeTests(unittest.TestCase):
         for upstream in ['192.0.2.56','127.0.0.53']:
             bad=dict(self.cfg,upstreams=[upstream])
             with self.assertRaises(ValueError):mod.validate_config(bad)
-    def test_route_must_use_the_same_host_as_the_dns_bind_address(self):
-        mod.validate_config(self.cfg)
-        bad=dict(self.cfg,route_ip='192.0.2.57')
-        with self.assertRaises(ValueError):mod.validate_config(bad)
+    def test_asymmetric_addresses_never_override_even_when_enabled(self):
+        for mode in ['compat','voice']:
+            bad=dict(self.cfg,route_ip='192.0.2.57',mode=mode)
+            with self.subTest(mode=mode):
+                self.assertIsNone(mod.override_response(query(),'192.0.2.44',bad))
+    def test_legacy_asymmetric_config_starts_relay_and_only_forwards(self):
+        path=Path(self.tmp.name)/'config.json'
+        payload=query()
+        response=payload[:2]+b'\x81\x80'+payload[4:]
+        for mode in ['compat','voice']:
+            with self.subTest(mode=mode):
+                path.write_text(json.dumps(dict(self.cfg,route_ip='192.0.2.57',mode=mode)))
+                try:relay=mod.Relay(path)
+                except ValueError as exc:self.fail(f'Ordinary forwarding must remain available: {exc}')
+                with patch.object(mod,'forward_udp',return_value=response), patch.object(mod,'forward_tcp',return_value=response):
+                    for tcp in [False,True]:
+                        self.assertEqual(relay.resolve(payload,'192.0.2.44',tcp=tcp),response)
+                self.assertEqual(relay.counts['forwarded'],2)
+                self.assertEqual(relay.counts['overridden'],0)
 
 
 class ForwardingTests(unittest.TestCase):

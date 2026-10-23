@@ -103,7 +103,7 @@ async def probe(args):
                 raise ValueError("invalid_pm_http_timeout")
             conversation = None
             for text in ["Запомни кодовое слово «маяк». Ответь только: запомнил.", "Какое кодовое слово я только что назвал? Ответь только этим словом."]:
-                async with session.post("http://127.0.0.1:31118/turn", headers=headers, json={"station_id": next(x for x in os.environ["AISIS_ALLOWED_STATIONS"].split(",") if x), "text": text, "conversation_id": conversation, "turn_id": uuid.uuid4().hex}, timeout=ClientTimeout(total=http_timeout)) as response:
+                async with session.post("http://127.0.0.1:31118/turn", headers=headers, json={"station_id": next(x.strip() for x in os.environ["AISIS_ALLOWED_STATIONS"].split(",") if x.strip()), "text": text, "conversation_id": conversation, "turn_id": uuid.uuid4().hex}, timeout=ClientTimeout(total=http_timeout)) as response:
                     body = await response.json()
                     if response.status != 200:
                         print(json.dumps({"pm_probe_http": response.status, "result": body}, ensure_ascii=False), flush=True)
