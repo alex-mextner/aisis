@@ -1,0 +1,53 @@
+name: aisis-yandex-network
+services:
+  dns-relay:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    network_mode: host
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE, DAC_READ_SEARCH]
+    security_opt: [no-new-privileges:true]
+    command: [python3, -B, /app/dns_forwarder.py, --config, /config/config.json]
+    volumes:
+      - ./network/dns_forwarder.py:/app/dns_forwarder.py:ro
+      # Mount the directory so an atomic config.json replacement is visible immediately.
+      - ${AISIS_NETWORK_CONFIG_DIR:?set private network config directory}:/config:ro
+    logging:
+      driver: json-file
+      options: {max-size: 1m, max-file: "2"}
+  tls-compat:
+    image: aisis-yandex-https:3b902d6
+    build:
+      context: ${AISIS_PROXY_SOURCE:-/nonexistent/aisis-https-proxy}
+    profiles: [compat]
+    restart: unless-stopped
+    volumes:
+      # Only these three domains exist here, all prefixed ! for original response forwarding.
+      - ./network/compat-domains:/app/domains:ro
+      - ${AISIS_NETWORK_CONFIG_DIR:?set private network config directory}/compat-nginx.conf:/etc/nginx/templates/nginx.conf.template:ro
+    ports:
+      - "${AISIS_SPEAKER_BIND_IP:-127.0.0.1}:80:80"
+      - "${AISIS_SPEAKER_BIND_IP:-127.0.0.1}:443:443"
+    logging:
+      driver: json-file
+      options: {max-size: 1m, max-file: "2"}
+  tls-voice:
+    image: aisis-yandex-https:3b902d6
+    build:
+      context: ${AISIS_PROXY_SOURCE:-/nonexistent/aisis-https-proxy}
+    profiles: [voice]
+    restart: unless-stopped
+    environment:
+      YANDEX_UPSTREAM_URL: http://host.docker.internal:31115
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - ./network/voice-domains:/app/domains:ro
+      - ${AISIS_NETWORK_CONFIG_DIR:?set private network config directory}/voice-nginx.conf:/etc/nginx/templates/nginx.conf.template:ro
+    ports:
+      - "${AISIS_SPEAKER_BIND_IP:-127.0.0.1}:80:80"
+      - "${AISIS_SPEAKER_BIND_IP:-127.0.0.1}:443:443"
+    logging:
+      driver: json-file
+      options: {max-size: 1m, max-file: "2"}

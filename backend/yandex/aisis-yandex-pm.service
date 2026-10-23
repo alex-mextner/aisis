@@ -1,0 +1,19 @@
+[Unit]
+Description=AISIS speech prompts through existing pm-owned ChatGPT browser
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/aisis-yandex
+Environment=PYTHONPATH=%h/.local/share/aisis-yandex/pm-deps
+EnvironmentFile=%h/.config/aisis-yandex/runtime.env
+ExecStart=%h/.local/share/agent-tools/chatgpt-guardian-venv/bin/python %h/.local/share/aisis-yandex/pm_cdp_server.py
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=infinity
+UMask=0077
+
+[Install]
+WantedBy=default.target
