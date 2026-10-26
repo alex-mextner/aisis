@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""User-requested voice turns in dedicated tabs of the existing pm-owned browser.
+"""User-requested voice turns in owned background tabs of the existing pm browser.
 
 No Chrome lifecycle, private ChatGPT HTTP calls, model changes, profile adoption,
 recovery enrollment, quota resets, control clearing, or automatic send retries.
@@ -46,6 +46,10 @@ class Ledger:
           PRAGMA synchronous=FULL;
           CREATE TABLE IF NOT EXISTS sessions(station TEXT PRIMARY KEY,target TEXT NOT NULL,url TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS turns(id TEXT PRIMARY KEY,station TEXT NOT NULL,digest TEXT NOT NULL,status TEXT NOT NULL);
+          CREATE UNIQUE INDEX IF NOT EXISTS active_tab_owner ON sessions(target) WHERE target!='';
+          CREATE TABLE IF NOT EXISTS tab_transfers(target TEXT PRIMARY KEY,source_station TEXT NOT NULL,destination_station TEXT NOT NULL,
+            source_url TEXT NOT NULL,destination_url TEXT NOT NULL,source_anchor TEXT,source_digest TEXT,
+            destination_anchor TEXT,destination_digest TEXT,state TEXT NOT NULL);
         ''')
         with self.db:
             columns={r[1] for r in self.db.execute('PRAGMA table_info(sessions)')}
@@ -66,6 +70,61 @@ class Ledger:
                 anchor_digest=COALESCE(excluded.anchor_digest,sessions.anchor_digest),
                 navigation_state=COALESCE(excluded.navigation_state,sessions.navigation_state)''',
                 (station,target,url,anchor_turn,anchor_digest,navigation_state))
+    def transfer_pending(self, station):
+        return bool(self.db.execute("SELECT 1 FROM tab_transfers WHERE state='pending' AND (source_station=? OR destination_station=?)",(station,station)).fetchone())
+    def reusable_sessions(self, destination, allowed):
+        candidates=[]
+        for (station,) in self.db.execute('SELECT station FROM sessions WHERE station!=? ORDER BY station',(destination,)):
+            if station not in allowed or self.transfer_pending(station): continue
+            session=self.session(station)
+            if not session['target'] or session['navigation_state'] in ('released','transfer_pending'): continue
+            if not session['anchor_turn'] or not session['anchor_digest']: continue
+            if not re.fullmatch(r'https://chatgpt\.com/c/[A-Za-z0-9_-]+',session['url']): continue
+            rows=self.db.execute('SELECT id,digest,status FROM turns WHERE station=? ORDER BY rowid DESC',(station,)).fetchall()
+            if any(row[2] in ('reserved','dispatching','uncertain') for row in rows): continue
+            complete=next((index for index,row in enumerate(rows) if row[2]=='complete'),None)
+            if complete is None or rows[complete][1]!=session['anchor_digest']: continue
+            if any(row[2] not in ('failed','verified_not_sent') for row in rows[:complete]): continue
+            candidates.append(dict(session,station=station,latest_turn=rows[0][0],completed_turn=rows[complete][0]))
+        return candidates
+    def claim_transfer(self, source, destination, turn_id, expected_session):
+        with self.db:
+            self.db.execute('BEGIN IMMEDIATE')
+            if self.transfer_pending(source['station']) or self.transfer_pending(destination): raise Refusal('tab_transfer_unresolved',409)
+            fresh=next((item for item in self.reusable_sessions(destination,{source['station']}) if item['station']==source['station']),None)
+            if fresh!=source: raise Refusal('tab_transfer_source_changed',409)
+            current=self.session(destination)
+            keys=('target','url','anchor_turn','anchor_digest','navigation_state')
+            if current!=(None if expected_session is None else {key:expected_session.get(key) for key in keys}): raise Refusal('tab_transfer_destination_changed',409)
+            if self.db.execute('SELECT station,status FROM turns WHERE id=?',(turn_id,)).fetchone()!=(destination,'reserved'): raise Refusal('tab_transfer_request_changed',409)
+            if self.db.execute('SELECT station FROM sessions WHERE target=?',(source['target'],)).fetchall()!=[(source['station'],)]: raise Refusal('tab_transfer_owner_ambiguous',409)
+            url=(current or {}).get('url','https://chatgpt.com/')
+            if url!='https://chatgpt.com/' and (not current.get('anchor_turn') or not current.get('anchor_digest')): raise Refusal('transfer_destination_unanchored',409)
+            if (url==source['url'] or self.db.execute('SELECT 1 FROM sessions WHERE url=? AND station!=?',(source['url'],source['station'])).fetchone()
+                    or (url!='https://chatgpt.com/' and self.db.execute('SELECT 1 FROM sessions WHERE url=? AND station!=?',(url,destination)).fetchone())): raise Refusal('station_conversation_alias',409)
+            self.db.execute("UPDATE sessions SET target='',navigation_state='released' WHERE station=?",(source['station'],))
+            self.db.execute('''INSERT INTO sessions(station,target,url,navigation_state) VALUES(?,?,?,'transfer_pending')
+                ON CONFLICT(station) DO UPDATE SET target=excluded.target,navigation_state=excluded.navigation_state''',(destination,source['target'],url))
+            self.db.execute('''INSERT INTO tab_transfers(target,source_station,destination_station,source_url,destination_url,
+                source_anchor,source_digest,destination_anchor,destination_digest,state) VALUES(?,?,?,?,?,?,?,?,?,'pending')
+                ON CONFLICT(target) DO UPDATE SET source_station=excluded.source_station,destination_station=excluded.destination_station,
+                source_url=excluded.source_url,destination_url=excluded.destination_url,source_anchor=excluded.source_anchor,
+                source_digest=excluded.source_digest,destination_anchor=excluded.destination_anchor,
+                destination_digest=excluded.destination_digest,state=excluded.state''',
+                (source['target'],source['station'],destination,source['url'],url,source['anchor_turn'],source['anchor_digest'],
+                (current or {}).get('anchor_turn'),(current or {}).get('anchor_digest')))
+    def finish_transfer(self, target, destination):
+        with self.db:
+            self.db.execute('BEGIN IMMEDIATE')
+            row=self.db.execute("SELECT source_station,source_url,destination_url,source_anchor,source_digest,destination_anchor,destination_digest FROM tab_transfers WHERE target=? AND destination_station=? AND state='pending'",(target,destination)).fetchone()
+            if not row: raise Refusal('tab_transfer_claim_changed',409)
+            source=self.session(row[0]);dest=self.session(destination)
+            if (not source or (source['target'],source['url'],source['anchor_turn'],source['anchor_digest'],source['navigation_state'])!=('',row[1],row[3],row[4],'released')
+                    or not dest or (dest['target'],dest['url'],dest['anchor_turn'],dest['anchor_digest'],dest['navigation_state'])!=(target,row[2],row[5],row[6],'transfer_pending')):
+                raise Refusal('tab_transfer_claim_changed',409)
+            if self.db.execute('SELECT station FROM sessions WHERE target=?',(target,)).fetchall()!=[(destination,)]: raise Refusal('tab_transfer_owner_ambiguous',409)
+            self.db.execute("UPDATE tab_transfers SET state='complete' WHERE target=?",(target,))
+            self.db.execute("UPDATE sessions SET navigation_state='ready' WHERE station=?",(destination,))
     def can_recreate_homepage(self, station):
         # Only a fresh request after conclusively pre-dispatch failures may repair
         # an empty session. A reservation recovered on restart is uncertain.
@@ -77,6 +136,7 @@ class Ledger:
         station,turn=payload['station_id'],payload['turn_id']
         digest=hashlib.sha256(payload['text'].encode()).hexdigest()
         with self.db:
+            if self.transfer_pending(station): raise Refusal('tab_transfer_unresolved',409)
             if self.db.execute('SELECT 1 FROM turns WHERE id=?',(turn,)).fetchone():
                 raise Refusal('duplicate_turn',409)
             if self.db.execute("SELECT 1 FROM turns WHERE station=? AND status IN ('uncertain','dispatching','reserved')",(station,)).fetchone():
@@ -189,7 +249,7 @@ class PromptService:
 
 # This is an observed-UI adapter, separate from the generic HA fixture Contract.
 # conversation_root.js is read from the installed shared pm package, unchanged.
-DOM = r'''({action='snapshot', expected=null, prompt='', probe=null, prepared=null, deadline=0, expected_chat='', allow_created_chat=false}) => {
+DOM = r'''({action='snapshot', expected=null, prompt='', probe=null, prepared=null, deadline=0, expected_chat='', allow_created_chat=false, destination=''}) => {
 /*@conversation-root*/
 // Reject a human-navigated tab before reading any conversation content.
 const currentCanonical=(location.origin+location.pathname).replace(/\/$/,'');
@@ -257,13 +317,20 @@ const read=(ownedMenu=false)=>{
   }
   if(new Set(turns.map(t=>t.id)).size!==turns.length)ambiguous=true;
  }
- return {url:location.href,chat,turns,running,challenge,quota,ambiguous,draft:composer?.textContent||'',signature:signature(trigger),root_match:found.match||'',root_selection:root?.getAttribute('data-chatgpt-conversation-selection-target')||'',root_error:found.error||''};
+ const loading=!!chat&&!dialogs.length&&(ownedMenu||!menus.length)&&!attachments&&(!composer||!trigger||!one('button[aria-label="Open profile menu"]')||(chat!=='https://chatgpt.com/'&&!root));
+ return {url:location.href,chat,turns,running,challenge,quota,ambiguous,loading,hidden:document.visibilityState==='hidden',draft:composer?.textContent||'',signature:signature(trigger),root_match:found.match||'',root_selection:root?.getAttribute('data-chatgpt-conversation-selection-target')||'',root_error:found.error||''};
 };
 if(action==='snapshot')return read();
 if(action==='probe')return {url:location.href,trigger,signature:signature(trigger),model:expected.model,effort:expected.effort,at:performance.timeOrigin+performance.now()};
 const same=(a,b)=>a&&b&&a.url===b.url&&a.chat===b.chat&&JSON.stringify(a.turns)===JSON.stringify(b.turns)&&a.signature===b.signature&&a.root_selection===b.root_selection;
 const safe=(o,owned=false)=>!o.running&&!o.challenge&&!o.quota&&!o.ambiguous&&(owned?o.draft===prompt:!o.draft);
 const verified=()=>probe&&probe.url===location.href&&probe.trigger===trigger&&probe.signature===signature(trigger)&&performance.timeOrigin+performance.now()-probe.at<30000&&(probe.model==='Astra'||probe.model==='Sol'&&probe.effort==='Extra High');
+if(action==='transfer'){
+ const o=read();
+ if(!timely()||document.visibilityState!=='hidden'||!expected?.hidden||!safe(o)||!same(o,expected)||!/^https:\/\/chatgpt\.com\/c\/[A-Za-z0-9_-]+$/.test(o.chat)||!o.turns.length||o.turns[o.turns.length-1].state!=='complete')return false;
+ if(destination===o.chat||!/^https:\/\/chatgpt\.com\/(?:c\/[A-Za-z0-9_-]+)?$/.test(destination))return false;
+ location.replace(destination);return true;
+}
 if(action==='open-model-menu'||action==='open-full-model-menu'){
  const full=action==='open-full-model-menu',o=read(full);
  if(!timely()||!safe(o)||!same(o,expected))return false;
@@ -379,10 +446,11 @@ class CDPDriver:
                     return page,identity
             await asyncio.sleep(.05)
         raise Refusal('background_tab_creation_uncertain')
-    async def page_for(self,session,remember):
+    async def page_for(self,session,remember,*,station=None,turn_id=None):
         target=(session or {}).get('target')
         if target and target==self.initial_target: self.initial_used=True
-        if not target and self.initial_target and not self.initial_used:
+        if (session or {}).get('navigation_state')=='transfer_pending': raise Refusal('tab_transfer_unresolved',409)
+        if not target and (session or {}).get('navigation_state')!='released' and self.initial_target and not self.initial_used:
             target=self.initial_target; self.initial_used=True
         expected=(session or {}).get('url','https://chatgpt.com/')
         homepage=expected=='https://chatgpt.com/'
@@ -408,25 +476,130 @@ class CDPDriver:
                 raise Refusal('owned_tab_navigated')
             if not homepage:
                 if not re.fullmatch(r'https://chatgpt\.com/c/[A-Za-z0-9_-]+',expected): raise Refusal('owned_tab_missing')
-                if exact:
-                    page=exact[0];target=await self.target(page)
-                    remember(target,expected)
-                    return page,target
+                if exact: raise Refusal('owned_url_open_elsewhere')
             elif not recreate:
                 raise Refusal('owned_tab_missing')
-        if len(pages)>=self.max_tabs: raise Refusal('tab_capacity')
+        if len(pages)>self.max_tabs: raise Refusal('tab_capacity')
+        if expected!='https://chatgpt.com/' and any(p.url.rstrip('/')==expected.rstrip('/') for p in pages): raise Refusal('owned_url_open_elsewhere')
+        if len(pages)>=self.max_tabs:
+            if station is None or turn_id is None: raise Refusal('tab_capacity')
+            return await self.reuse_completed(station,turn_id,session,pages)
         page,target=await self.new_background_page()
         return await self.navigate_owned(page,target,expected,remember)
     async def navigate_owned(self,page,target,expected,remember):
-        homepage=expected=='https://chatgpt.com/'
         # Persist target before navigation. Failure is never retried by this turn.
-        remember(target,expected,**({'navigation_state':'pending'} if homepage else {}))
+        remember(target,expected,navigation_state='pending')
         try: await page.goto(expected,wait_until='domcontentloaded',timeout=30000)
         except Exception:
-            if homepage: remember(target,expected,navigation_state='failed')
+            remember(target,expected,navigation_state='failed')
             raise Refusal('navigation_failed') from None
-        if homepage: remember(target,expected,navigation_state='ready')
+        remember(target,expected,navigation_state='ready')
         return page,target
+    async def reuse_completed(self,station,turn_id,session,pages):
+        destination=(session or {}).get('url','https://chatgpt.com/')
+        if destination!='https://chatgpt.com/' and not re.fullmatch(r'https://chatgpt\.com/c/[A-Za-z0-9_-]+',destination): raise Refusal('unsafe_destination')
+        if destination!='https://chatgpt.com/' and (not session.get('anchor_turn') or not session.get('anchor_digest')): raise Refusal('transfer_destination_unanchored',409)
+        for source in self.ledger.reusable_sessions(station,self.allowed):
+            if source['url']==destination: raise Refusal('station_conversation_alias',409)
+            matches=[]
+            for page in pages:
+                if await self.target(page)==source['target']: matches.append(page)
+            if len(matches)!=1: continue
+            page=matches[0]
+            try:
+                if page.url.rstrip('/')!=source['url'].rstrip('/'): raise Refusal('reusable_tab_navigated')
+                current=await self.snapshot(page,expected_chat=source['url'])
+                if current.get('challenge') is True or current.get('quota') is True: self.record(current)
+                if current.get('challenge') is True: raise Refusal('human_attention_required')
+                if current.get('quota') is True: raise Refusal('quota_blocked',429)
+                self.transfer_snapshot(current,source)
+            except Refusal as error:
+                if asyncio.current_task().cancelling(): raise asyncio.CancelledError
+                if error.code in ('human_attention_required','quota_blocked'): raise
+                continue
+            # No caller outside this serialized turn may transfer ownership. Both
+            # source and destination controls are checked at the native boundary.
+            async with self.store.async_guard() as db:
+                # Destination/global blocks reject the request. Source-scoped
+                # controls make only that pre-claim candidate ineligible.
+                if not self.store._api_allowed(db,destination,'','',False): raise Refusal('transfer_guardian_stopped')
+                if db.execute('SELECT 1 FROM controls WHERE key=?',('watch:'+destination,)).fetchone(): raise Refusal('transfer_guardian_watched')
+                if not self.store._api_allowed(db,source['url'],'','',False): continue
+                if db.execute('SELECT 1 FROM controls WHERE key=?',('watch:'+source['url'],)).fetchone(): continue
+                self.ledger.claim_transfer(source,station,turn_id,session)
+                try:
+                    changed=await self.dispatch(page.evaluate(self.script,{'action':'transfer','expected_chat':source['url'],
+                        'expected':current,'destination':destination,'deadline':(time.time()+3)*1000}))
+                except Exception:
+                    # protected_dispatch can drain an inner TimeoutError while
+                    # consuming the outer deadline cancellation, then rethrow
+                    # that original exception. Never continue a cancelled task.
+                    if asyncio.current_task().cancelling(): raise asyncio.CancelledError
+                    # Native replace may destroy its renderer context. Settle by
+                    # read-only observation of this claimed target, never navigate again.
+                    changed=None
+                if asyncio.current_task().cancelling(): raise asyncio.CancelledError
+                if changed is False: raise Refusal('tab_transfer_refused',409)
+                if changed not in (True,None): raise Refusal('tab_transfer_unknown',409)
+            try:
+                await page.wait_for_url(destination,wait_until='domcontentloaded',timeout=30000)
+                await self.settle_transfer(page,source['target'],destination,session)
+            except asyncio.CancelledError: raise
+            except Refusal: raise
+            except Exception:
+                raise Refusal('tab_transfer_unresolved',409) from None
+            if asyncio.current_task().cancelling(): raise asyncio.CancelledError
+            self.ledger.finish_transfer(source['target'],station)
+            return page,source['target']
+        raise Refusal('tab_capacity')
+    async def settle_transfer(self,page,target,destination,session):
+        # DOMContentLoaded precedes ChatGPT's composer/history hydration. This
+        # read-only wait is nested inside the original whole-request deadline.
+        async with asyncio.timeout(15):
+            while True:
+                if asyncio.current_task().cancelling(): raise asyncio.CancelledError
+                if page.is_closed() or page.url.rstrip('/')!=destination.rstrip('/') or await self.target(page)!=target:
+                    raise Refusal('tab_transfer_target_changed')
+                current=await self.snapshot(page,expected_chat=destination)
+                if asyncio.current_task().cancelling(): raise asyncio.CancelledError
+                if current.get('chat')!=destination: raise Refusal('tab_transfer_destination_changed')
+                if current.get('challenge') is True or current.get('quota') is True: self.record(current)
+                if current.get('hidden') is not True or current.get('draft')!='' or any(current.get(key) is not False for key in ('running','challenge','quota')):
+                    raise Refusal('transfer_ui_busy')
+                turns=current.get('turns',[])
+                homepage=destination=='https://chatgpt.com/'
+                if homepage and turns: raise Refusal('transfer_homepage_not_empty')
+                if not homepage:
+                    if not session or not session.get('anchor_turn') or not session.get('anchor_digest'): raise Refusal('transfer_anchor_changed')
+                    anchors=[(index,turn) for index,turn in enumerate(turns) if turn.get('id')==session['anchor_turn']]
+                    if anchors:
+                        if (len(anchors)!=1 or anchors[0][0]!=len(turns)-1
+                                or anchors[0][1].get('state')!='complete'
+                                or hashlib.sha256(anchors[0][1].get('user','').encode()).hexdigest()!=session['anchor_digest']):
+                            raise Refusal('transfer_anchor_changed')
+                # Structural loading and a history prefix missing its saved
+                # anchor may wait. A positively contradictory anchor never waits.
+                if current.get('ambiguous') is True:
+                    if current.get('loading') is not True: raise Refusal('transfer_ui_busy')
+                elif current.get('ambiguous') is not False:
+                    raise Refusal('transfer_ui_busy')
+                elif homepage or (anchors and anchors[0][1].get('assistant','').strip()):
+                    self.transfer_snapshot(current,session,homepage=homepage)
+                    return
+                await asyncio.sleep(.05)
+    def transfer_snapshot(self,snapshot,session,*,homepage=False):
+        if snapshot.get('hidden') is not True or snapshot.get('draft')!='': raise Refusal('transfer_ui_busy')
+        if any(snapshot.get(key) is not False for key in ('running','challenge','quota','ambiguous')): raise Refusal('transfer_ui_busy')
+        if homepage:
+            if snapshot.get('chat')!='https://chatgpt.com/' or snapshot.get('turns'): raise Refusal('transfer_homepage_not_empty')
+            return
+        if not session or snapshot.get('chat')!=session['url']: raise Refusal('transfer_conversation_changed')
+        validate_owned_root(snapshot,session)
+        turns=snapshot.get('turns',[])
+        if (not turns or not session.get('anchor_turn') or not session.get('anchor_digest')
+                or turns[-1].get('id')!=session['anchor_turn'] or turns[-1].get('state')!='complete'
+                or hashlib.sha256(turns[-1].get('user','').encode()).hexdigest()!=session['anchor_digest']
+                or not turns[-1].get('assistant','').strip()): raise Refusal('transfer_anchor_changed')
     async def stop_uncertain(self,session):
         # A timeout can pin a known owned conversation only. Do not fabricate a
         # global stop for a first-turn homepage or replace any existing reason.
@@ -455,6 +628,14 @@ class CDPDriver:
         if snapshot.get('quota'): raise Refusal('quota_blocked',429)
         if snapshot.get('ambiguous') or snapshot.get('running') or snapshot.get('draft')!=draft:
             raise Refusal('ui_busy')
+        # Hydration can append history after transfer settlement. Revalidate
+        # the saved LAST anchor at the actual pre-mutation baseline boundary.
+        if session and session.get('anchor_turn') and session.get('anchor_digest'):
+            turns=snapshot.get('turns',[])
+            if (snapshot.get('chat')!=session.get('url') or not turns or turns[-1].get('id')!=session['anchor_turn']
+                    or turns[-1].get('state')!='complete'
+                    or hashlib.sha256(turns[-1].get('user','').encode()).hexdigest()!=session['anchor_digest']):
+                raise Refusal('owned_history_changed')
     async def model_probe(self,page,snapshot,session=None):
         """Read full selected-model UI; a generic Pro label is never evidence."""
         trigger=page.locator('button[aria-label="Select ChatGPT model"][data-codex-intelligence-trigger="true"]')
@@ -508,7 +689,7 @@ class CDPDriver:
         expected=(session or {}).get('url','https://chatgpt.com/')
         async with self.store.async_guard() as db:
             if not self.store._api_allowed(db,expected,'','',False): raise Refusal('guardian_stopped')
-        page,target=await self.page_for(session,remember)
+        page,target=await self.page_for(session,remember,station=payload['station_id'],turn_id=payload['turn_id'])
         await self.transport.seed(page)
         try: await page.locator('[contenteditable="true"][data-composer-markdown][role="textbox"][aria-label="Ask ChatGPT"]').wait_for(state='visible',timeout=15000)
         except Exception: raise Refusal('composer_unavailable') from None
@@ -626,6 +807,7 @@ async def main():
     # Separate local service ledger, never a replacement for Guardian state.
     ledger=Ledger(env.get('AISIS_PM_STATE_DB',str(Path.home()/'.local/state/aisis/pm-turns.sqlite')))
     driver=CDPDriver(env)
+    driver.ledger=ledger;driver.allowed=allowed
     if driver.initial_target and ledger.db.execute('SELECT 1 FROM sessions WHERE target=?',(driver.initial_target,)).fetchone():
         driver.initial_used=True
     stop=asyncio.Event()

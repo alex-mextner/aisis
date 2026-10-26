@@ -124,11 +124,21 @@ quota blocks and uncertain sends continue to block the operation.
 The service binds to127.0.0.1:31118; authenticated `POST /turn` receives exactly
 `station_id`, `text`, `turn_id`, and optional `conversation_id`. It returns
 `text` and the permanent conversation URL as `conversation_id`. The private
-`AISIS_ALLOWED_STATIONS` list is required. Every speaker has an owned tab and
-its own durable conversation pointer. The existing browser's tab capacity is
-respected. Across a browser restart, an exact saved permanent conversation can be
-reattached or reopened in a new owned tab. Duplicate matches and a live owned
-tab that was manually navigated are refused for inspection.
+`AISIS_ALLOWED_STATIONS` list is required. Every speaker has its own durable
+conversation URL and completed-turn anchor. Active background tabs have exclusive
+station ownership. At the browser's tab limit, a serialized request can reuse
+another allowed speaker's positively owned tab only when its last loaded turn
+matches the completed anchor, its composer is empty, it is hidden and idle, and
+both conversations' Guardian controls permit the operation. A guarded native
+navigation restores the destination's separate history inside the original
+request deadline. The service does not close tabs or add response cleanup time.
+
+Ownership transfer is recorded atomically before navigation. A refused or
+ambiguous transfer remains pending and blocks both involved speakers until
+inspection; it never causes an automatic message retry. A missing target is
+never replaced by adopting a human tab merely because its URL matches. A saved
+conversation may be reopened in a new owned background tab when capacity allows;
+duplicate URLs and manually navigated owned targets are refused.
 
 Install `aisis-yandex-pm.service` and configure `AISIS_PM_CDP`,
 `AISIS_PM_WORKSPACE`, `AISIS_PM_GUARDIAN_STATE`, `AISIS_PM_STATE_DB` and a random
@@ -161,6 +171,25 @@ startup unless all four values are finite, positive, and strictly ordered as
 reply < request < HTTP < adapter. Custom commands without `AISIS_PM_URL` retain
 their independent timeout configuration.
 
+
+### Optional native browser handoff probe
+
+The optional probe checks six-tab reuse and delayed composer/history hydration
+in a new temporary browser profile. Run headed Chrome on an isolated Xvfb
+display so background visibility is native rather than overridden:
+
+```sh
+PYTHONPATH="$HOME/.local/share/aisis-yandex/pm-deps" \
+xvfb-run -a "$HOME/.local/share/agent-tools/chatgpt-guardian-venv/bin/python" \
+  browser_handoff_probe.py --headed --chrome /absolute/path/to/chrome
+```
+
+It requires Xvfb, `xvfb-run`, `xauth`, the installed pm Python environment with
+Playwright and `agenttools_chatgpt`, and an actual Chrome ELF executable rather
+than the managed-profile wrapper. The probe uses the shared conversation-root
+helper and protected dispatch with fixture-routed pages and temporary SQLite
+files. It does not access the live account. Passing verifies native handoff
+mechanics, not live ChatGPT answers or physical speaker operation.
 
 ## Native speech completion and cancellation
 
