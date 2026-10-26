@@ -1,0 +1,4 @@
+unused.invalid:1
+!quasar.yandex.net
+!quasar.yandex.ru
+!scbh.yandex.net

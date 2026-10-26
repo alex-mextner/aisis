@@ -1,0 +1,18 @@
+[Unit]
+Description=AISIS Yandex ChatGPT and Bracho adapter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/aisis-yandex
+EnvironmentFile=%h/.config/aisis-yandex/runtime.env
+ExecStart=%h/.local/share/aisis-yandex/venv/bin/python %h/.local/share/aisis-yandex/adapter.py
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=10
+UMask=0077
+
+[Install]
+WantedBy=default.target

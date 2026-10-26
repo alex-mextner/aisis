@@ -1,0 +1,258 @@
+# AISIS Yandex backend
+
+Specification: [150](../../docs/specs/150-yandex-chatgpt-backend.md).
+
+The Python process runs as the desktop user so it can reuse the existing signed
+in `pm chatgpt` setup. Quasar runs in Docker with host networking and reaches the
+adapter on loopback. PostgreSQL alone publishes a loopback port. The adapter
+must never bind publicly. Quasar's speaker protocol port is the only intended
+LAN listener.
+
+## Install and launch
+
+Run `prepare-upstream.sh` once to populate the pinned build cache. Copy this
+folder to `~/.local/share/aisis-yandex`, create a Python venv there and install
+`requirements.txt`. Install ffmpeg if the existing voice environment does not
+already provide it. Install `aisis-yandex-adapter.service` to
+`~/.config/systemd/user/`. Copy `runtime.env.example` to the private path
+`~/.config/aisis-yandex/runtime.env`, mode0600, and fill values from the existing
+local credentials. Generate PostgreSQL and GLAGOL keys once and preserve them.
+The GLAGOL key must remain stable across restarts. Fill `AISIS_ALLOWED_STATIONS`
+with the intended speaker IDs before starting the adapter; an empty or whitespace
+only list refuses startup, and unknown IDs never reach ChatGPT.
+
+Compose reads the private environment for interpolation, but gives Quasar only
+its explicit protocol, database, STT and local TTS settings. PM authentication,
+browser configuration and Fish credentials stay outside the Quasar container.
+
+`AISIS_CHATGPT_COMMAND` is a JSON argument vector, not a shell command. Its
+executable reads a single JSON line and writes a single JSON response as
+specified in150. `chatgpt_pm.py` calls the local AISIS pm browser service;
+there is deliberately no invented `pm ask` operation.
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now aisis-yandex-adapter.service
+docker compose --env-file ~/.config/aisis-yandex/runtime.env -f compose.yaml up -d --build
+curl --fail http://127.0.0.1:31117/healthz
+curl --fail http://127.0.0.1:31116/devices
+```
+
+If an old long-lived terminal lacks the user's already-assigned Docker group,
+use a fresh authenticated local login; do not change socket permissions or
+account groups. Never print `docker compose config` with the real environment,
+because the expanded output includes credentials.
+
+`/healthz` reports configuration availability, not successful browser login or
+a completed speaker migration. Run an actual turn to verify those components.
+The adapter emits failure classes and Fish HTTP status without user text or
+credentials. Upstream Quasar logs can contain transcripts; restrict access and
+retention of its Docker logs.
+
+## Rollback
+
+Stop the core user services and this Compose project when rolling back the core
+backend. Preserve the PostgreSQL volume, private keys and conversation state.
+The core installation scripts do not change router or speaker configuration.
+
+If the optional [network operator](network/README.md) changed DHCP DNS, follow
+its captured router snapshot and guarded rollback procedure first. Keep its
+forwarding resolver available for the retained DHCP lease period after restoring
+the router, so clients with an older lease still resolve ordinary domains.
+Stopping a resolver immediately after restoring router settings is insufficient.
+Restore a speaker's recorded endpoint/configuration only if that speaker was
+actually changed; also revert any temporary ADB settings if used.
+
+## Speaker HTTPS front end
+
+`prepare-proxy.sh` checks out `v3rt3p/https-proxy` at commit
+`3b902d61b85642770cd96ed76ffaf80832c99289`. Its optional Compose profile
+`speaker-tls` is separate from the speech backend and defaults to loopback ports
+80 and443. Set private `AISIS_PROXY_SOURCE` and `AISIS_SPEAKER_BIND_IP` only after
+checking port ownership and one speaker's supported firmware and rollback.
+This proxy's certificates depend on the eMudhra trust weakness described by the
+upstream project; a speaker with updated trust may reject them. A ready TLS
+proxy is not evidence that a speaker accepts those certificates.
+
+The upstream target is explicitly port31115. The default companion proxy's
+port31120 is not the Quasar server's default and would route to the wrong place.
+With this Compose host-network topology the proxy reaches the host through
+`host.docker.internal`; the Quasar processor/TTS remain strictly loopback.
+
+## Optional compatible streaming recognition
+
+Reuse existing host speech tools and model caches first. If they cannot provide
+Quasar's streaming WebSocket protocol, `prepare-stt.sh` checks out
+`v3rt3p/quasistreaming-gigam` at
+`e1770f19d67fe31908c5649cc680ad8ade77ed72`. The optional Compose profile
+`streaming-stt` builds its CPU image, listens only on127.0.0.1:31121 and persists
+the GigaAM-v3 checkpoint in a dedicated volume. First startup downloads a large
+model; service startup is not ready until model initialization completes. The
+transport accepts mono16kHz PCM16 and sample-rate metadata, and returns JSON
+`text` with `end_of_utt`. Verify with an actual speech fixture. This profile does
+not reserve or change the host GPU.
+
+### Reuse existing Wyoming ASR
+
+`stt_wyoming.py` provides Quasar's streaming WebSocket protocol over an existing
+Wyoming recognizer, including WebRTC voice activity detection,200ms preroll,
+800ms end silence,30s utterance cap, and a bounded40s idle lifetime. It accepts
+mono PCM16 at8/16/32/48kHz with the mandatory initial `sample_rate` JSON message.
+Audio is kept in RAM; the gateway does not download or load a recognition model.
+The existing ASR receives `transcribe`, `audio-start`, audio chunks and
+`audio-stop`, and its final `transcript` becomes Quasar's `end_of_utt` response.
+
+Set the private `AISIS_WYOMING_URI` and enable `aisis-yandex-stt.service`. If the
+recognizer is reachable only from its own host's Docker network, the optional
+`aisis-yandex-wyoming-tunnel.service` uses existing SSH authentication and host
+verification to forward localhost31122 to the verified container endpoint.
+Set `AISIS_WYOMING_REMOTE_HOST`, `AISIS_WYOMING_REMOTE_PORT` and
+`AISIS_WYOMING_SSH_TARGET` privately. No Home Assistant network/container setting
+is changed. A container IP can change after recreation; re-check it if the
+recognizer becomes unavailable.
+
+
+## Existing pm browser integration
+
+`pm_cdp_server.py` attaches to the already running, account-verified pm Chrome
+CDP endpoint. It does not launch Chrome, copy profiles, obtain browser tokens,
+switch model or effort, enroll recovery, clear Guardian controls, or close
+existing tabs. It uses the installed `agenttools_chatgpt` implementation's
+account-scoped Store and protected dispatch transaction. Existing manual stops,
+quota blocks and uncertain sends continue to block the operation.
+
+The service binds to127.0.0.1:31118; authenticated `POST /turn` receives exactly
+`station_id`, `text`, `turn_id`, and optional `conversation_id`. It returns
+`text` and the permanent conversation URL as `conversation_id`. The private
+`AISIS_ALLOWED_STATIONS` list is required. Every speaker has its own durable
+conversation URL and completed-turn anchor. Active background tabs have exclusive
+station ownership. At the browser's tab limit, a serialized request can reuse
+another allowed speaker's positively owned tab only when its last loaded turn
+matches the completed anchor, its composer is empty, it is hidden and idle, and
+both conversations' Guardian controls permit the operation. A guarded native
+navigation restores the destination's separate history inside the original
+request deadline. The service does not close tabs or add response cleanup time.
+
+Ownership transfer is recorded atomically before navigation. A refused or
+ambiguous transfer remains pending and blocks both involved speakers until
+inspection; it never causes an automatic message retry. A missing target is
+never replaced by adopting a human tab merely because its URL matches. A saved
+conversation may be reopened in a new owned background tab when capacity allows;
+duplicate URLs and manually navigated owned targets are refused.
+
+Install `aisis-yandex-pm.service` and configure `AISIS_PM_CDP`,
+`AISIS_PM_WORKSPACE`, `AISIS_PM_GUARDIAN_STATE`, `AISIS_PM_STATE_DB` and a random
+`AISIS_PM_TOKEN` in the private environment. The unit uses the already installed
+Guardian Python environment; the adapter client uses its own small venv. Start
+the pm service before the adapter. `GET /health` reports service availability,
+not a proven successful send or login.
+
+Browser mutation lives in the persistent pm service. Canceling the adapter's
+HTTP client cannot cancel a JavaScript operation that Chrome may already be
+executing. Shutdown drains pending guarded work; its unit deliberately has no
+forced stop timeout. A failed or interrupted dispatch is recorded privately and
+never resent. Inspect the owned chat and ledger before reconciling an uncertain
+turn. Do not delete state or clear a Guardian stop to make a request succeed.
+
+`chatgpt_pm.py` uses only this authenticated local pm service. It does not
+persist conversation transcripts or offer a legacy completion route. The default
+time budgets are230s for the complete browser operation (including preparation),
+170s maximum for reply observation,240s for its HTTP client and250s for the
+adapter subprocess. These nested limits let the server return a bounded failure
+before its callers time out. A protected dispatch already executing still drains
+before cancellation is resolved; an uncertain send never becomes a retry.
+
+When upgrading, the installer preserves the private `runtime.env`. Update all
+four timeout settings together: `AISIS_PM_REPLY_TIMEOUT=170`,
+`AISIS_PM_REQUEST_TIMEOUT=230`, `AISIS_PM_HTTP_TIMEOUT=240`, and
+`AISIS_CHATGPT_TIMEOUT=250`. The old outer value of180s is incompatible with the
+new browser budget. When `AISIS_PM_URL` is configured, the adapter refuses
+startup unless all four values are finite, positive, and strictly ordered as
+reply < request < HTTP < adapter. Custom commands without `AISIS_PM_URL` retain
+their independent timeout configuration.
+
+
+### Optional native browser handoff probe
+
+The optional probe checks six-tab reuse and delayed composer/history hydration
+in a new temporary browser profile. Run headed Chrome on an isolated Xvfb
+display so background visibility is native rather than overridden:
+
+```sh
+PYTHONPATH="$HOME/.local/share/aisis-yandex/pm-deps" \
+xvfb-run -a "$HOME/.local/share/agent-tools/chatgpt-guardian-venv/bin/python" \
+  browser_handoff_probe.py --headed --chrome /absolute/path/to/chrome
+```
+
+It requires Xvfb, `xvfb-run`, `xauth`, the installed pm Python environment with
+Playwright and `agenttools_chatgpt`, and an actual Chrome ELF executable rather
+than the managed-profile wrapper. The probe uses the shared conversation-root
+helper and protected dispatch with fixture-routed pages and temporary SQLite
+files. It does not access the live account. Passing verifies native handoff
+mechanics, not live ChatGPT answers or physical speaker operation.
+
+## Native speech completion and cancellation
+
+The supported Wyoming gateway distinguishes normal native audio EOF from
+cancellation. Quasar's Opus decoder buffers incomplete Ogg pages across transport frames,
+retains complete packet boundaries, rejects oversized frames and checks for an
+unconsumed partial page or packet at native EOF. Each utterance gets a new
+decoder. Quasar's patched `VoiceInputHandler` flushes queued audio and calls
+its STT session's `finish()`. The WebSocket client sends `{"type":"finish"}`,
+keeps the connection open, and waits up to40s for the final `end_of_utt` result.
+The gateway flushes speech without needing extra silence and permits up to35s
+for recognition. Native EOF arriving during an existing VAD-triggered ASR call
+joins that same call. Empty recognition asks the speaker to repeat without making a ChatGPT request.
+A shared finalization promise emits exactly one finish
+when VAD and native Close race.
+
+Cancellation closes the STT transport immediately (the gateway also accepts
+`{"type":"cancel"}`). Session identity/epoch guards suppress callbacks and
+finish events from a cancelled or replaced input. A timeout emits an error;
+it never substitutes the last partial or an empty successful transcription.
+One Quasar STT WebSocket carries one utterance.
+
+`test-quasar-native.sh` runs the actual patched TypeScript handler and WebSocket
+client in the built Quasar image with network access disabled. Its optional
+`--live` mode uses an explicitly supplied synthetic Брачо Ogg fixture and the
+running local Wyoming gateway, proving Opus decoding→native EOF→final ASR. It
+does not exercise a physical speaker or send a ChatGPT prompt.
+
+The optional GigaAM build profile is unused scaffolding. Its upstream server
+must first implement and verify the explicit EOF control before that profile
+can replace the supported Wyoming gateway.
+
+## Optional source-scoped speaker routing
+
+The [network add-on](network/README.md) provides a separately reviewed
+source-scoped DNS/HTTPS path and router backup/rollback tooling. Its voice-only
+profile routes only `uniproxy.alice.yandex.net` to this backend; Quasar account,
+sync and `scbh` responses continue to the original service. The UniProxy voice
+connection has no dependency on this backend's OAuth/account or GLAGOL state,
+so this mode does not require ADB bootstrap or replacement account settings.
+
+Firmware acceptance of the proxy certificate, actual LAN routing and a
+microphone-to-speaker result must be established on the device. Source review,
+a running proxy and synthetic tests do not establish hardware compatibility.
+
+## Ogg packet boundaries before Opus decoding
+
+The pinned upstream decoder treated each Ogg lacing segment as one Opus packet.
+A real Брачо fixture exposed valid packets larger than255bytes, which that
+implementation attempted to decode before receiving the rest of the packet.
+The reviewed codec patch assembles complete packets through255-byte lacing
+chains, including continuation across pages and the required zero terminator
+for a packet whose size is an exact multiple of255. It tracks page sequence,
+stream serial and continuation flags, bounds pending packet memory, and rejects
+truncated page headers/tables/bodies before decoding shortened data.
+
+Identification/comment headers are handled by completed packet boundaries.
+Input sample rate in OpusHead is informational; decoding uses48kHz PCM supported
+by the gateway, including valid input metadata of0 or44100. Signed output gain
+and channel mapping use their specified header offsets. The output gain is
+applied by the actual Opus decoder.
+
+The actual-encoder/decoder regressions construct valid Ogg pages with CRC,
+exercise packet/page boundaries and signed gain, and run alongside native EOF
+regressions. See [Ogg framing](https://xiph.org/ogg/doc/framing.html) and
+[Ogg Opus RFC7845](https://www.rfc-editor.org/rfc/rfc7845).
