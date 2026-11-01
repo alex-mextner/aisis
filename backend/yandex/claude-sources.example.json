@@ -1,0 +1,17 @@
+[
+  {
+    "label": "finance",
+    "path": "/home/USER/xp/ExpenseSyncBot/.env",
+    "variables": ["CLAUDE_API_TOKEN"]
+  },
+  {
+    "label": "calendar",
+    "path": "/home/USER/xp/HyperCalendarBot/.env",
+    "variables": ["CLAUDE_API_TOKEN2"]
+  },
+  {
+    "label": "report",
+    "path": "/home/USER/xp/super_report_bot/.env",
+    "variables": ["CLAUDE_API_KEY"]
+  }
+]

@@ -49,6 +49,52 @@ The adapter emits failure classes and Fish HTTP status without user text or
 credentials. Upstream Quasar logs can contain transcripts; restrict access and
 retention of its Docker logs.
 
+## Claude API primary, ChatGPT web last
+
+`claude_primary.py` is an alternative `AISIS_CHATGPT_COMMAND` (same one-JSON-line
+contract, no adapter change). It asks `claude-sonnet-5-5` (thinking `between_tools`,
+effort `medium`, no tools declared) through the Anthropic Messages API, trying up to three
+existing credentials in the order of `claude-sources.json` (`claude-sources.example.json`:
+finance, calendar, report). Each entry names a private `.env` file and the variable to read;
+values are never copied into configuration, logs or this repository. Accepted keys are
+`sk-ant-api...` and the Console `sk-ant-usr-...` shape; OAuth `sk-ant-oat` tokens, other
+providers' keys and shell expressions are ignored. Source files must be regular, owned by the
+current user and not group/world accessible; a missing file is skipped, but an existing file
+with a looser mode fails every turn (`credential_source_not_private`, no ChatGPT reserve) until
+it is fixed. Duplicate values count once.
+
+A 401/402/403/408/429/5xx/timeout response puts that key in a persistent cooldown (the full
+finite `Retry-After` interval from the provider, never shortened; missing or malformed values use
+a safe default) and moves to the next key. Any other 4xx rejection (model access, workspace or
+organization state, which belong to the key) is treated the same way with a 300 s default
+cooldown, and a disabled organization or exhausted credit with 3600 s; only a redirect-like
+status or an unusable answer shape fails the turn. An answer cut off at `max_tokens` is spoken as far as it
+goes; an empty one fails the turn. Only when all keys fail or cool down is the existing
+`chatgpt_pm.py` (kept beside the
+script in the release directory) called, exactly once, with its Guardian and conversation
+ownership checks unchanged. A successful Claude answer never calls it. A turn id is
+recorded before the first request and is never resent, even after an uncertain outcome.
+
+The API path is stateless by default (`AISIS_CLAUDE_HISTORY_PAIRS=0`): each request carries
+only the current utterance and no transcript is stored. Per turn it records only the turn id,
+station, status, provider and an unsalted SHA-256 of the utterance (the existing PM ledger
+does the same), plus key-hash cooldowns.
+`1..16` opts into bounded private per-speaker context; returning to `0` deletes all retained
+context, for every speaker, on the next request. When that context is handed to the ChatGPT
+reserve it is flattened to one line and trimmed (oldest pairs first) to the PM character and
+128 KiB request limits. Budgets are ordered
+`3 x AISIS_CLAUDE_TIMEOUT + AISIS_PM_HTTP_TIMEOUT + 5 <= AISIS_ROUTER_TIMEOUT <
+AISIS_CHATGPT_TIMEOUT` (20/240/310/320; set all four in the overlay: the adapter's own
+`AISIS_CHATGPT_TIMEOUT` default is 250). `claude_primary.py --check-config` makes no
+network call; `--probe-keys` sends one paid request per key and never starts the fallback.
+`install-claude-primary.sh [RELEASE_ID]` stages the immutable release directory
+(`releases/claude-primary-<id>/`: `claude_primary.py`, the unchanged `chatgpt_pm.py`, examples and a
+`MANIFEST` of hashes) and refuses if the installed `chatgpt_pm.py` differs; it changes no service or
+configuration. Activate with `claude-primary.env.example` (set the printed release path) and
+`claude-primary.conf.example`, then `systemctl --user daemon-reload` and restart only the adapter.
+Roll back by removing the drop-in, running `systemctl --user daemon-reload` (without it systemd keeps
+loading the old drop-in) and restarting only the adapter.
+
 ## Rollback
 
 Stop the core user services and this Compose project when rolling back the core
