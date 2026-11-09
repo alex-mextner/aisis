@@ -1,0 +1,6 @@
+# Pins for the aisis-station-embed.service venv (embed-venv, Python 3.12):
+# local multilingual embeddings for assistant memory. Rebuild:
+#   uv venv --python 3.12 ~/.local/share/aisis/embed-venv
+#   uv pip install --python ~/.local/share/aisis/embed-venv/bin/python -r requirements-embed.txt
+fastembed==0.9.1
+aiohttp==3.14.5

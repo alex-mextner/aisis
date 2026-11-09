@@ -1,0 +1,7 @@
+[Unit]
+Description=AISIS regenerate the Whisper initial prompt from HA entities and artists
+
+[Service]
+Type=oneshot
+Nice=19
+ExecStart=%h/xp/aisis/services/yandex-station/code/refresh-whisper-prompt.sh

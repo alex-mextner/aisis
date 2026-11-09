@@ -1,0 +1,11 @@
+[Unit]
+Description=aisis quasar-server LAN proxy (192.168.0.56:31116 -> 127.0.0.1:31116)
+After=network-online.target docker.service
+
+[Service]
+ExecStart=%h/.local/share/aisis/venv/bin/python %h/xp/aisis/services/yandex-station/code/quasar_lan_proxy.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

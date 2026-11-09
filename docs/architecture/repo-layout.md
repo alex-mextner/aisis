@@ -22,6 +22,7 @@ aisis/
     telegram-personal/           # MTProto connector / resolver
   services/
     calls/                       # Telegram P2P call service during migration
+    yandex-station/              # live Yandex Station adapter (Python, systemd); runtime state under ~/.local/share/aisis
   subrepos/
     calendar/                    # git submodule: HyperCalendarBot
     finance/                     # git submodule: ExpenseSyncBot

@@ -1,0 +1,19 @@
+[Unit]
+Description=AISIS clip feed: every heard utterance to the owner's Telegram, replies become ASR truth
+After=network-online.target aisis-station-stt.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/xp/aisis/services/yandex-station/code
+ExecStart=%h/.local/share/aisis/venv/bin/python %h/xp/aisis/services/yandex-station/code/clipfeed.py run
+Restart=on-failure
+RestartSec=5
+Nice=19
+IOSchedulingClass=idle
+KillMode=control-group
+TimeoutStopSec=10
+UMask=0077
+
+[Install]
+WantedBy=default.target

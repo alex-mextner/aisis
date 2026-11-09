@@ -1,0 +1,7 @@
+# runtime secrets/state never belong in the repo
+*.env
+fish.key
+*.sqlite3*
+*.key
+__pycache__/
+*.pyc

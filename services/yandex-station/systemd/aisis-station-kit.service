@@ -1,0 +1,14 @@
+[Unit]
+Description=aisis kit sync helper (eQuasar server for quasar.yandex.net requests, :18080)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/lite-kit/scripts
+Environment=BIND_IP=192.168.0.56 HTTP_PORT=18080 HTTPS_PORT=18443 SYNC_LOCAL=1 PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 %h/lite-kit/scripts/equasar_server.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

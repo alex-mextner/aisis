@@ -1,0 +1,18 @@
+[Unit]
+Description=Wyoming Whisper (faster-whisper) STT Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/home/ultra/wyoming-env/bin/python3 -m wyoming_faster_whisper \
+  --uri 'tcp://0.0.0.0:10300' \
+  --data-dir '/home/ultra/wyoming-data' \
+  --download-dir '/home/ultra/wyoming-data' \
+  --model large-v3-turbo --language auto \
+  --device cuda
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,163 @@
+# Blue/green voice stack: two quasar-server colors behind one nginx switch,
+# for prod and for an isolated stage. Drive it with bgctl.py / deploy.sh;
+# they export BG_STATE and pass runtime.env + state.env as env files.
+#
+#   prod : switch 31115/31116/31114   blue 31215/31216/31214   green 31315/31316/31314
+#   stage: switch 31415/31416/31414   blue 31515/31516/31514   green 31615/31616/31614
+#
+# Port triples are uniproxy(HTTP+WS) / API / function-state-server. The speaker
+# never talks to a color directly: tls-voice -> switch:31115 -> active color.
+name: aisis-voice
+
+x-quasar-common: &quasar-common
+  restart: unless-stopped
+  network_mode: host
+  stop_grace_period: 10s
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: "3"}
+  volumes:
+    # Pre-synthesized filler phrases (gen_fillers.py), read-only.
+    - ${AISIS_FILLERS_DIR:-${HOME}/.cache/aisis/fillers}:/src/fillers:ro
+
+x-quasar-env: &quasar-env
+  # Fresh station records default their timezone to the container's (zod default in
+  # storage/types.ts); a UTC container made the speaker clock 1 h behind in Belgrade.
+  TZ: ${AISIS_TZ:-Europe/Belgrade}
+  GLAGOL_JWT_KEY: ${GLAGOL_JWT_KEY:?set persistent private key}
+  TTS_OPENAI_API_KEY: ${TTS_OPENAI_API_KEY:-local-loopback}
+  TTS_OPENAI_MODEL: bracho
+  TTS_OPENAI_VOICE: Брачо
+  TTS_OPENAI_SPEED: "1"
+
+x-prod-env: &prod-env
+  <<: *quasar-env
+  STT_GIGAAM_URL: ${STT_GIGAAM_URL:?set local streaming STT endpoint}
+  POSTGRES_URL: "postgres://quasar:${POSTGRES_PASSWORD:?set in private env}@127.0.0.1:31119/quasar"
+  PROCESSOR_BASIC_URL: "http://127.0.0.1:31117/processor"
+  TTS_OPENAI_BASE_URL: "http://127.0.0.1:31117/v1"
+  # Smart home goes through the always-on ha-cli proxy (state cache survives HA restarts).
+  AISIS_HA_URL: "http://127.0.0.1:8795"
+  AISIS_HA_TOKEN: "hacli-local"
+  # Phrases the owner confirmed once («да» → executes directly next time) must outlive a container recreate and
+  # a blue/green flip; they used to live in the container's own filesystem and vanished with every deploy.
+  AISIS_HA_AMBIGUITY_FILE: /state/ha.ambiguity.json
+
+# Stage never reaches the real adapter, STT or Home Assistant: processor, TTS,
+# music and STT point at loopback ports nobody listens on, HA goes to the dry-run
+# ha-cli below (HA URL is a dead port: reads come from cache, writes are only
+# queued in memory and never delivered), the database is a private copy.
+x-stage-env: &stage-env
+  <<: *quasar-env
+  STT_GIGAAM_URL: "ws://127.0.0.1:31422"
+  POSTGRES_URL: "postgres://quasar:${POSTGRES_PASSWORD:?set in private env}@127.0.0.1:31119/quasar_stage"
+  PROCESSOR_BASIC_URL: "http://127.0.0.1:31417/processor"
+  TTS_OPENAI_BASE_URL: "http://127.0.0.1:31417/v1"
+  # Voice «включи <музыка>» posts here instead of the real adapter; nothing listens
+  # unless a stage check starts a recording mock, so stage can never play sound.
+  AISIS_ADAPTER_MUSIC_URL: "http://127.0.0.1:31418/music/play"
+  AISIS_HA_URL: "http://127.0.0.1:8895"
+  AISIS_HA_TOKEN: "hacli-stage-dry-run"
+
+x-switch: &switch
+  image: ${AISIS_SWITCH_IMAGE:-aisis-yandex-https:3b902d6}
+  restart: unless-stopped
+  network_mode: host
+  entrypoint: [nginx, -g, "daemon off;", -c, /etc/nginx/switch/nginx.conf]
+  logging:
+    driver: json-file
+    options: {max-size: 1m, max-file: "2"}
+
+services:
+  switch-prod:
+    <<: *switch
+    container_name: aisis-switch-prod
+    profiles: [prod]
+    volumes:
+      - ${BG_STATE:?}/prod/switch:/etc/nginx/switch:ro
+
+  quasar-prod-blue:
+    <<: *quasar-common
+    container_name: aisis-quasar-prod-blue
+    image: ${PROD_IMG_BLUE:?run bgctl.py init}
+    profiles: [prod]
+    environment: {<<: *prod-env, PORT: "31215", API_PORT: "31216", FUNCTION_STATE_SERVER_PORT: "31214"}
+    volumes:
+      - ${AISIS_FILLERS_DIR:-${HOME}/.cache/aisis/fillers}:/src/fillers:ro
+      - ${AISIS_QUASAR_STATE_DIR:-${HOME}/.local/state/aisis/quasar-prod}:/state
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:31216/devices').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+  quasar-prod-green:
+    <<: *quasar-common
+    container_name: aisis-quasar-prod-green
+    image: ${PROD_IMG_GREEN:?run bgctl.py init}
+    profiles: [prod]
+    environment: {<<: *prod-env, PORT: "31315", API_PORT: "31316", FUNCTION_STATE_SERVER_PORT: "31314"}
+    volumes:
+      - ${AISIS_FILLERS_DIR:-${HOME}/.cache/aisis/fillers}:/src/fillers:ro
+      - ${AISIS_QUASAR_STATE_DIR:-${HOME}/.local/state/aisis/quasar-prod}:/state
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:31316/devices').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+  switch-stage:
+    <<: *switch
+    container_name: aisis-switch-stage
+    profiles: [stage]
+    volumes:
+      - ${BG_STATE:?}/stage/switch:/etc/nginx/switch:ro
+
+  quasar-stage-blue:
+    <<: *quasar-common
+    container_name: aisis-quasar-stage-blue
+    image: ${STAGE_IMG_BLUE:?run bgctl.py init}
+    profiles: [stage]
+    environment: {<<: *stage-env, PORT: "31515", API_PORT: "31516", FUNCTION_STATE_SERVER_PORT: "31514"}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:31516/devices').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+  quasar-stage-green:
+    <<: *quasar-common
+    container_name: aisis-quasar-stage-green
+    image: ${STAGE_IMG_GREEN:?run bgctl.py init}
+    profiles: [stage]
+    environment: {<<: *stage-env, PORT: "31615", API_PORT: "31616", FUNCTION_STATE_SERVER_PORT: "31614"}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:31616/devices').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+  # Dry-run Home Assistant proxy for stage: same hacli.py as prod, HA URL is a
+  # dead port, so it can only serve the cached snapshot (read-only mount) and
+  # can never deliver a service call to a real device.
+  ha-cli-stage:
+    image: python:3.12-alpine
+    container_name: aisis-ha-cli-stage
+    profiles: [stage]
+    restart: unless-stopped
+    network_mode: host
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      AISIS_HACLI_PORT: "8895"
+      AISIS_HACLI_HA_URL: "http://127.0.0.1:9"
+      HOME: /home/stage
+    command: [python3, -B, /app/hacli.py]
+    volumes:
+      - ${AISIS_CODE_DIR:-${HOME}/xp/aisis/services/yandex-station/code}/hacli.py:/app/hacli.py:ro
+      - ${AISIS_DATA_DIR:-${HOME}/.local/share/aisis}/ha-state-cache.json:/home/stage/.local/share/aisis/ha-state-cache.json:ro

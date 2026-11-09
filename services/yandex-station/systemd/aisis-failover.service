@@ -1,0 +1,16 @@
+[Unit]
+Description=AISIS voice stack autofailover watchdog (blue/green quasar, adapter, stt, ha-cli)
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 %h/xp/aisis/services/yandex-station/bluegreen/failover.py --env prod
+Restart=always
+RestartSec=2
+# The watchdog must outlive the things it repairs.
+KillMode=process
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target
