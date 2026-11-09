@@ -76,7 +76,7 @@ support services: aisis-station-kit :18080 (eQuasar sync server, ~/lite-kit),
 ### Install snippet
 
 ```bash
-cp ~/xp/aisis/services/yandex-station/systemd/* ~/.config/systemd/user/  # includes .service.d dirs
+cp -r ~/xp/aisis/services/yandex-station/systemd/. ~/.config/systemd/user/  # copies units AND .service.d drop-in dirs; replaces dangling symlinks
 systemctl --user daemon-reload
 # renames: aisis-yandex-adapter→aisis-station-adapter, -stt→aisis-station-stt,
 #          -pm→aisis-station-pm, -embed→aisis-station-embed,
