@@ -39,14 +39,20 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(tts_settings.load()["tts_voice"], "bracho")
         self.assertEqual(tts_settings.effective_voice(), "bracho")
 
-    def test_alice_without_key_effectively_bracho_and_flags_needs_key(self):
-        tts_settings.update({"tts_voice": "alice"})
+    def test_speechkit_without_key_flags_needs_key_and_runs_keyless(self):
+        tts_settings.update({"tts_voice": "alice", "alice_engine": "speechkit"})
         status = tts_settings.status()
         self.assertTrue(status["needs_key"])
-        self.assertEqual(status["effective_voice"], "bracho")
+        self.assertEqual(status["effective_engine"], "keyless")
+
+    def test_alice_defaults_to_keyless_engine(self):
+        tts_settings.update({"tts_voice": "alice"})
+        status = tts_settings.status()
+        self.assertFalse(status["needs_key"])
+        self.assertEqual(status["effective_engine"], "keyless")
 
     def test_key_is_private_and_never_in_status(self):
-        tts_settings.update({"tts_voice": "alice"})
+        tts_settings.update({"tts_voice": "alice", "alice_engine": "speechkit"})
         tts_settings.write_key("AQVNsecretkey123")
         self.assertEqual(stat.S_IMODE(tts_settings.key_path().stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(tts_settings.settings_path().stat().st_mode), 0o600)
@@ -104,7 +110,9 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.adapter = Adapter({"AISIS_STATE_DB": self.tmp.name + "/state.db", "AISIS_ALLOWED_STATIONS": "a",
             "AISIS_MEMORY": "0", "FFMPEG": FFMPEG, "FISH_API_KEY": "fake-fish",
             "FISH_TTS_URL": str(self.upstream.make_url("/fish")),
-            "YANDEX_TTS_URL": str(self.upstream.make_url("/yandex"))})
+            "YANDEX_TTS_URL": str(self.upstream.make_url("/yandex")),
+            # Port 1 refuses connections: a test that reaches the keyless engine fails instead of hitting the real uniproxy.
+            "AISIS_UNIPROXY_URL": "ws://127.0.0.1:1/"})
         self.client = TestClient(TestServer(self.adapter.app()))
         await self.client.start_server()
 
@@ -128,7 +136,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.calls, {"fish": 1, "yandex": 0})
 
     async def test_alice_with_key_uses_yandex_only(self):
-        tts_settings.update({"tts_voice": "alice", "yandex_folder_id": "b1gfolder"})
+        tts_settings.update({"tts_voice": "alice", "alice_engine": "speechkit", "yandex_folder_id": "b1gfolder"})
         tts_settings.write_key("AQVNkey")
         await self.assert_ogg(await self.speak())
         self.assertEqual(self.calls, {"fish": 0, "yandex": 1})
@@ -143,19 +151,19 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
     async def test_setting_is_read_per_request(self):
         tts_settings.write_key("AQVNkey")
         await self.assert_ogg(await self.speak())
-        tts_settings.update({"tts_voice": "alice"})
+        tts_settings.update({"tts_voice": "alice", "alice_engine": "speechkit"})
         await self.assert_ogg(await self.speak())
         tts_settings.update({"tts_voice": "bracho"})
         await self.assert_ogg(await self.speak())
         self.assertEqual(self.calls, {"fish": 2, "yandex": 1})
 
     async def test_alice_without_key_falls_back_to_bracho_without_calling_yandex(self):
-        tts_settings.update({"tts_voice": "alice"})
+        tts_settings.update({"tts_voice": "alice", "alice_engine": "speechkit"})
         await self.assert_ogg(await self.speak())
         self.assertEqual(self.calls, {"fish": 1, "yandex": 0})
 
     async def test_yandex_failure_falls_back_to_bracho_and_is_reported(self):
-        tts_settings.update({"tts_voice": "alice"})
+        tts_settings.update({"tts_voice": "alice", "alice_engine": "speechkit"})
         tts_settings.write_key("AQVNkey")
         self.yandex_status = 403
         await self.assert_ogg(await self.speak())
@@ -165,15 +173,16 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["alice_tts"]["status"], 502)
 
     async def test_pinned_alice_never_falls_back(self):
+        tts_settings.update({"alice_engine": "speechkit"})
         pin = {"X-AISIS-Voice": "alice"}
-        self.assertEqual((await self.speak(pin)).status, 503)  # no key
+        self.assertEqual((await self.speak(pin)).status, 502)  # no key: keyless engine, refused by the test URL
         tts_settings.write_key("AQVNkey")
         self.yandex_status = 500
         self.assertEqual((await self.speak(pin)).status, 502)
         self.assertEqual(self.calls["fish"], 0)
 
     async def test_pinned_bracho_ignores_alice_setting(self):
-        tts_settings.update({"tts_voice": "alice"})
+        tts_settings.update({"tts_voice": "alice", "alice_engine": "speechkit"})
         tts_settings.write_key("AQVNkey")
         await self.assert_ogg(await self.speak({"X-AISIS-Voice": "bracho"}))
         self.assertEqual(self.calls, {"fish": 1, "yandex": 0})
@@ -182,7 +191,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.speak({"X-AISIS-Voice": "bob"})).status, 400)
 
     async def test_over_limit_text_falls_back(self):
-        tts_settings.update({"tts_voice": "alice"})
+        tts_settings.update({"tts_voice": "alice", "alice_engine": "speechkit"})
         tts_settings.write_key("AQVNkey")
         response = await self.client.post("/v1/audio/speech",
             json={"input": "а" * 5001, "voice": "Брачо", "response_format": "opus"})

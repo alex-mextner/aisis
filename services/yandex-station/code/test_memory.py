@@ -121,7 +121,7 @@ def test_turn_end_to_end_with_injection_and_writeback(tmp_path, monkeypatch):
 
     monkeypatch.setattr(adapter, 'run_command', fake_run_command)
 
-    async def fake_extract(prompt, reply):
+    async def fake_extract(self, prompt, reply):
         return [{'text': 'Владелец любит жасминовый чай', 'kind': 'preference'}]
 
     env = {'AISIS_ALLOWED_STATIONS': 'st1',
