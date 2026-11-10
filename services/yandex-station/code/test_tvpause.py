@@ -151,29 +151,39 @@ def test_older_activation_cannot_replace_newer_hold_timer(rig):
     ticks = iter(range(2000, 2100))
     tv.clock = lambda: float(next(ticks))
     newer_done = threading.Event()
+    older_arming = threading.Event()
     original_arm = tv._arm
     armed = []
+    errors = []
 
     def arm(name, delay, fn, *args):
         if not armed:                        # the older activation, about to arm its timer
             armed.append(args)
+            older_arming.set()
             newer_done.wait(0.5)             # with the lock held it times out; unlocked, the newer one finishes here
         original_arm(name, delay, fn, *args)
 
+    def run(fn):
+        try:
+            fn()
+        except BaseException as error:       # surfaced by the assertions below
+            errors.append(error)
+
     tv._arm = arm
     ha.up = False
-    older = threading.Thread(target=tv.activation)
+    older = threading.Thread(target=run, args=(tv.activation,))
     older.start()
-    while not armed:
-        threading.Event().wait(0.01)
+    assert older_arming.wait(5), "older activation never reached the hold timer"
     ha.up = True
 
     def newer():
         tv.activation()
         newer_done.set()
 
-    newer_thread = threading.Thread(target=newer)
+    newer_thread = threading.Thread(target=run, args=(newer,))
     newer_thread.start()
-    older.join()
-    newer_thread.join()
+    older.join(5)
+    newer_thread.join(5)
+    assert not older.is_alive() and not newer_thread.is_alive()
+    assert not errors, errors
     assert tv.timers["hold"].args == (tv.status()["last_activation"],)
