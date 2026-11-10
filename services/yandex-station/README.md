@@ -50,9 +50,12 @@ support services: aisis-station-kit :18080 (eQuasar sync server, ~/lite-kit),
 
 ## Ops runbook
 
-- **Deploy units**: copy `systemd/*` into `~/.config/systemd/user/`, then
-  `systemctl --user daemon-reload`, `systemctl --user disable --now OLD`,
-  `systemctl --user enable --now NEW` (see the snippet below).
+- **Deploy units**: `scripts/install-systemd-units.sh` (repo root) copies every
+  unit and drop-in of `systemd/` into `~/.config/systemd/user/`, reloads systemd,
+  enables each unit with an `[Install]` section and starts the ones not running;
+  it never restarts a running unit (it names the ones to restart). `--check` exits 3
+  on drift, `--plan` only prints it. A fresh machine gets it from the `aisis`
+  module of the `.files` profile (clones this repository, runs the installer).
 - **State lives in**: `~/.local/share/aisis/` (venvs `venv/`, `embed-venv/`,
   `dsp-bench-venv/`, `bluegreen-state/`, `corpus/`, `models/`, `prompts/`,
   `releases/`, `voice-archive/`, `dashboard-ui/`, `pm-deps/`, `dialogs.sqlite3`,
@@ -76,17 +79,14 @@ support services: aisis-station-kit :18080 (eQuasar sync server, ~/lite-kit),
 ### Install snippet
 
 ```bash
-cp -r ~/xp/aisis/services/yandex-station/systemd/. ~/.config/systemd/user/  # copies units AND .service.d drop-in dirs; replaces dangling symlinks
-systemctl --user daemon-reload
-# renames: aisis-yandex-adapter→aisis-station-adapter, -stt→aisis-station-stt,
-#          -pm→aisis-station-pm, -embed→aisis-station-embed,
-#          aisis-quasar-lan-proxy→aisis-station-lan-proxy, aisis-kit→aisis-station-kit
-for pair in aisis-yandex-adapter:aisis-station-adapter aisis-yandex-stt:aisis-station-stt \
-            aisis-yandex-pm:aisis-station-pm aisis-yandex-embed:aisis-station-embed \
-            aisis-quasar-lan-proxy:aisis-station-lan-proxy aisis-kit:aisis-station-kit; do
-  old=${pair%%:*}; new=${pair##*:}
+~/xp/aisis/scripts/install-systemd-units.sh            # install + enable + start what is not running
+~/xp/aisis/scripts/install-systemd-units.sh --check    # drift report, exit 3 on drift
+
+# one-time rename of the pre-consolidation units (only on a machine that still has the old names):
+#   aisis-yandex-adapter→aisis-station-adapter, -stt→aisis-station-stt,
+#   -pm→aisis-station-pm, -embed→aisis-station-embed,
+#   aisis-quasar-lan-proxy→aisis-station-lan-proxy, aisis-kit→aisis-station-kit
+for old in aisis-yandex-adapter aisis-yandex-stt aisis-yandex-pm aisis-yandex-embed aisis-quasar-lan-proxy aisis-kit; do
   systemctl --user disable --now "$old.service"
-  systemctl --user enable --now "$new.service"
 done
-systemctl --user enable --now aisis-ha-cli aisis-clipfeed aisis-dashboard aisis-failover aisis-whisper-prompt.timer
 ```
