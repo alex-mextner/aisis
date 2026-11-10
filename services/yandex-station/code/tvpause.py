@@ -228,26 +228,35 @@ class TvPause:
             if not self.ha.ha_up():
                 self._event(st, "skip", detail="Home Assistant down")
                 self._save(st)
-                return
-            for entity in cfg["entities"]:
-                state, stale = self.ha.state(entity)
-                if stale or state is None:
-                    self._event(st, "skip", entity, "state unavailable")
-                elif state == "playing":
-                    if self.dry_run:
-                        self._event(st, "dry-run", entity, "would pause")
-                    elif self.ha.call("media_pause", entity):
-                        st["paused"][entity] = now
-                        self._event(st, "pause", entity)
-                    else:
-                        self._event(st, "error", entity, "media_pause failed")
-                elif entity in st["paused"] and state != "paused":
-                    del st["paused"][entity]          # someone else changed it; no longer ours
-                    self._event(st, "forget", entity, f"state {state}")
-            self._save(st)
-            holding = bool(st["paused"])
-        if holding:
-            self._arm("hold", cfg["max_hold_s"], self._hold_expired, now)
+                # A pause held from an earlier activation must follow this newer last_activation,
+                # or its hold timer (keyed to the older one) expires as a no-op and never resumes.
+                holding = bool(st["paused"])
+            else:
+                holding = self._pause_entities(cfg, st, now)
+            # Armed under the state lock: an older activation must not replace the timer of a newer one
+            # after releasing the lock (its timestamp guard would then expire as a no-op).
+            if holding:
+                self._arm("hold", cfg["max_hold_s"], self._hold_expired, now)
+
+    def _pause_entities(self, cfg, st, now) -> bool:
+        """Pause playing entities (caller holds the state lock); returns whether any pause is held."""
+        for entity in cfg["entities"]:
+            state, stale = self.ha.state(entity)
+            if stale or state is None:
+                self._event(st, "skip", entity, "state unavailable")
+            elif state == "playing":
+                if self.dry_run:
+                    self._event(st, "dry-run", entity, "would pause")
+                elif self.ha.call("media_pause", entity):
+                    st["paused"][entity] = now
+                    self._event(st, "pause", entity)
+                else:
+                    self._event(st, "error", entity, "media_pause failed")
+            elif entity in st["paused"] and state != "paused":
+                del st["paused"][entity]          # someone else changed it; no longer ours
+                self._event(st, "forget", entity, f"state {state}")
+        self._save(st)
+        return bool(st["paused"])
 
     def _arm(self, name, delay, fn, *args):
         old = self.timers.pop(name, None)
@@ -259,10 +268,8 @@ class TvPause:
         timer.start()
 
     def _hold_expired(self, activation_ts):
-        with _Locked(self.state_file):
-            if self._load()["last_activation"] != activation_ts:
-                return                              # a newer activation owns the hold
-        self.resume("max hold elapsed")
+        # a newer activation owns the hold
+        self.resume("max hold elapsed", unless=lambda st: st["last_activation"] != activation_ts)
 
     # ----- dialog log events -----
     def observe(self, ts: float, message: str):
@@ -302,16 +309,18 @@ class TvPause:
         self._arm("resume", cfg["resume_delay_s"], self._resume_if_idle, ended_ts)
 
     def _resume_if_idle(self, ended_ts):
-        with _Locked(self.state_file):
-            if self._load()["last_activation"] > ended_ts:
-                return                               # the next turn/dialog started during the grace
-        self.resume("dialog ended")
+        # the next turn/dialog started during the grace
+        self.resume("dialog ended", unless=lambda st: st["last_activation"] > ended_ts)
 
     # ----- resume -----
-    def resume(self, reason: str):
+    def resume(self, reason: str, unless=None):
+        """Resume what we paused. `unless(state)` is evaluated under the same lock as the resume,
+        so an activation cannot slip in between the idle check and the release."""
         cfg = self.settings()
         with _Locked(self.state_file):
             st = self._load()
+            if unless is not None and unless(st):
+                return
             ours, touched = dict(st["paused"]), st["user_touched"]
             st["paused"], st["user_touched"] = {}, False
             for entity in ours:

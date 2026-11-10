@@ -14,6 +14,8 @@ the thin real-I/O helpers (adb, files) are at the bottom.
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
 import os
 import subprocess
@@ -302,9 +304,24 @@ def overlay_active(path: Path | None = None) -> bool:
 
 def save_overlay_changes(changes: dict, path: Path | None = None) -> dict:
     """Merge new changes into the persisted overlay (sticky: the desired state survives restarts)."""
-    merged = deep_merge(load_overlay(path), sync_overlay(changes))
-    tts_settings._write_private(path or overlay_path(), json.dumps(merged, ensure_ascii=False, indent=1) + "\n")
+    target = path or overlay_path()
+    with _overlay_lock(target):
+        merged = deep_merge(load_overlay(target), sync_overlay(changes))
+        tts_settings._write_private(target, json.dumps(merged, ensure_ascii=False, indent=1) + "\n")
     return merged
+
+
+@contextlib.contextmanager
+def _overlay_lock(target: Path):
+    """Exclusive flock across threads and processes: the read-merge-write must not interleave,
+    or a concurrent dashboard edit is overwritten by a merge built on the older file."""
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(str(target) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
 
 
 # ---------- mute (volume 0 + remembered restore level) ----------
