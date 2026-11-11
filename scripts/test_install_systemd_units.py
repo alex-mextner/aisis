@@ -195,10 +195,10 @@ class InstallerTest(unittest.TestCase):
         checkout = self.root / "live-checkout"
         (checkout / "x").mkdir(parents=True)
         (checkout / "x" / "dangling").symlink_to(self.root / "nowhere")
-        (self.dest / "aisis-dashboard.service.d").symlink_to(checkout / "x")
+        (self.dest / "aisis-station-adapter.service.d").symlink_to(checkout / "x")
         result = self.run_script()
         self.assertEqual(result.returncode, 0, result.stderr)
-        for name in ("wyoming-whisper.service.d", "aisis-dashboard.service.d"):
+        for name in ("wyoming-whisper.service.d", "aisis-station-adapter.service.d"):
             self.assertFalse((self.dest / name).is_symlink(), name)
         self.assertEqual(sorted(p.name for p in (checkout / "x").iterdir()), ["dangling"])
         self.assertEqual(self.run_script("--check").returncode, 0)
