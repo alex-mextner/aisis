@@ -31,3 +31,14 @@ The authoritative product definition is [docs/specs/000-master-spec.md](docs/spe
 5. Secrets stay out of prompts; local private sessions stay local whenever possible.
 6. Every external write has an explicit policy and audit trail.
 7. Model routing is replaceable and provider-neutral.
+
+## Yandex speaker backend
+
+The first runnable backend is in [backend/yandex](backend/yandex/README.md).
+It connects compatible Yandex speakers to the existing pm-owned ChatGPT browser
+and the Брачо voice, with isolated speaker conversations and local speech
+services. See [specification 150](docs/specs/150-yandex-chatgpt-backend.md) for
+interfaces, deployment boundaries and acceptance criteria.
+
+Speaker migration depends on the device's firmware and network routing. A ready
+backend is reported separately from an actual microphone-to-speaker test.
