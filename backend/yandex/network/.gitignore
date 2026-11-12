@@ -1,0 +1,13 @@
+# Private material is never committed. Real values live outside the checkout:
+#   ~/.config/aisis/            (lan.env, fixed-lease list, owner notes)   ~/.config/aisis-yandex/network/ (relay config)
+lan.env
+lan.env.*
+!lan.env.example
+dhcp-hosts.conf
+config.json
+*.pcap
+*.key
+*.pem
+.env
+__pycache__/
+*.pyc

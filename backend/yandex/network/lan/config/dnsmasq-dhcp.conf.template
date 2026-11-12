@@ -1,0 +1,18 @@
+# DHCP only (no DNS, no DHCPv6, no router advertisements). Rendered by bin/gen-dhcp-conf.sh from the private lan.env; do
+# not edit the rendered file by hand. Everyone except the speaker keeps the explicit upstream DNS servers; the speaker is
+# told to use the LAN front's resolver.
+port=0
+interface=@IFACE@
+no-hosts
+user=dnsmasq
+group=dnsmasq
+dhcp-authoritative
+dhcp-leasefile=/var/lib/dnsmasq/dnsmasq.leases
+dhcp-range=@RANGE_START@,@RANGE_END@,@NETMASK@,@LEASE_TIME@
+dhcp-option=option:router,@GATEWAY@
+dhcp-option=tag:!speaker,option:dns-server,@UPSTREAM_DNS@
+dhcp-option=tag:speaker,option:dns-server,@RESOLVER@
+log-dhcp
+log-facility=-
+# Fixed leases: the speaker first, then the private list (never committed).
+dhcp-host=@SPEAKER_MAC@,set:speaker,@SPEAKER_ADDR@

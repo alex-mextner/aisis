@@ -1,0 +1,63 @@
+# Override for ../../../compose.network.yaml (copied unedited to <front dir>/release/) on the always-on LAN host.
+# Variables come from front.env (rendered by bin/front-install.sh from the private lan.env). Compose project name and the
+# container names derive from AISIS_LAN_PROJECT so they never clash with another stack on the same host.
+services:
+  dns-relay:
+    container_name: ${AISIS_LAN_PROJECT:?}-dns-relay
+  tls-voice:
+    container_name: ${AISIS_LAN_PROJECT}-tls-voice
+    image: ${AISIS_LAN_TLS_IMAGE:-${AISIS_LAN_PROJECT}-https:local}
+    environment:
+      # The recognition backend runs on another host: no host-gateway alias.
+      YANDEX_UPSTREAM_URL: http://${AISIS_LAN_BACKEND_ADDR:?}:${AISIS_LAN_BACKEND_UPSTREAM_PORT:-31115}
+    extra_hosts: !reset []
+    # Only 443 is published: the speaker has no dependency on port 80 (no 204 answer is needed there, checked on the
+    # wire 2026-11); whatever owns port 80 on this host is that host's own infrastructure, not this project.
+    ports: !override
+      - "${AISIS_SPEAKER_BIND_IP:?}:443:443"
+    # The per-list domain files are the owner's inventory: mounted from a private directory, not from the release copy.
+    volumes:
+      - ${AISIS_LAN_VOICE_DOMAINS_DIR:?}:/app/domains:ro
+      - ${AISIS_NETWORK_CONFIG_DIR:?}/voice-nginx.conf:/etc/nginx/templates/nginx.conf.template:ro
+
+  # DHCP server. Profile-gated: a plain `up` never starts it. Start it only through the cutover procedure, and never
+  # while another DHCP server (router or old host) is active.
+  dhcp:
+    container_name: ${AISIS_LAN_PROJECT}-dhcp
+    profiles: [dhcp]
+    image: ${AISIS_LAN_DHCP_IMAGE:-${AISIS_LAN_PROJECT}-dhcp:local}
+    build:
+      context: ${AISIS_LAN_HOME:?}/dhcp
+    restart: unless-stopped
+    network_mode: host
+    cap_add: [NET_ADMIN, NET_RAW, NET_BIND_SERVICE]
+    volumes:
+      - ${AISIS_LAN_HOME}/dhcp/dnsmasq-dhcp.conf:/etc/dnsmasq-dhcp.conf:ro
+      - ${AISIS_LAN_STATE_DIR:?}/dhcp:/var/lib/dnsmasq
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "3"}
+
+  # OPTIONAL fail-open watcher: flips only `enabled` in the relay config when the backend is unreachable, so the relay
+  # then forwards plainly instead of overriding names. Do NOT enable it for a speaker that is locked to the LAN: with the
+  # override off such a speaker has no working path at all. Profile-gated. The config DIR is mounted read-write here
+  # (the relay mounts it read-only).
+  backend-watcher:
+    container_name: ${AISIS_LAN_PROJECT}-backend-watcher
+    profiles: [watcher]
+    image: python:3.12-alpine
+    restart: unless-stopped
+    network_mode: host
+    user: "${AISIS_LAN_UID:-1000}:${AISIS_LAN_GID:-1000}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      AISIS_WATCHER_TARGETS: ${AISIS_LAN_BACKEND_TARGETS:?}
+    command: [python3, -B, -u, /app/backend_watcher.py, --config, /config/config.json]
+    volumes:
+      - ${AISIS_LAN_HOME}/watcher/backend_watcher.py:/app/backend_watcher.py:ro
+      - ${AISIS_NETWORK_CONFIG_DIR:?}:/config
+    logging:
+      driver: json-file
+      options: {max-size: 1m, max-file: "3"}

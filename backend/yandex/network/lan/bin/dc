@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# docker compose wrapper for the LAN front project; lives on the front host next to front.env (installed by
+# front-install.sh). `dc ps`, `dc --profile dhcp logs dhcp`, `dc up -d dns-relay`, ...
+set -euo pipefail
+H=$(cd "$(dirname "$0")" && pwd)
+set -a
+# shellcheck disable=SC1091
+. "$H/front.env"
+set +a
+exec docker compose --project-name "$AISIS_LAN_PROJECT" --project-directory "$H/release" \
+  -f "$H/release/compose.network.yaml" -f "$H/compose.front.yaml" "$@"

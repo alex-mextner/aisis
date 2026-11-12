@@ -1,0 +1,7 @@
+# systemd --user drop-in for aisis-failover.service, rendered by install-failover-exclude.sh.
+# The always-on LAN front serves the DNS relay and the TLS front, so this host's copies are not probed or restarted.
+# Undo: install-failover-exclude.sh --uninstall
+[Service]
+Environment=AISIS_BLUEGREEN_DIR=@BLUEGREEN_DIR@
+ExecStart=
+ExecStart=@ORIGINAL_COMMAND@
