@@ -50,7 +50,7 @@ def export_archive(container: str, names: list[str], archive: Path) -> None:
         result = subprocess.run(
             ["docker", "exec", "-i", container, "tar", "--format=gnu",
              "--sort=name", "--mtime=@0", "--owner=0", "--group=0", "--numeric-owner",
-             "--no-recursion", "--null", "--verbatim-files-from", "-czf", "-", "-C", "/", "-T", "-"],
+             "--hard-dereference", "--no-recursion", "--null", "--verbatim-files-from", "-czf", "-", "-C", "/", "-T", "-"],
             input=b"".join(name.lstrip("/").encode() + b"\0" for name in names),
             stdout=output, stderr=subprocess.PIPE, timeout=90,
         )
