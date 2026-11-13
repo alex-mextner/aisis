@@ -1,0 +1,40 @@
+--- backend/ha-intents.ts
++++ backend/ha-intents.ts
+@@ -19,0 +20 @@
++import { executeTvAppIntent, parseTvAppIntent, executeFireplaceIntent, parseFireplaceIntent } from './tv-app-intents'
+@@ -1279,0 +1281,35 @@
++    // An explicit TV app request always targets the TV/Chromecast pair, even from another speaker.
++    const tvApp = parseTvAppIntent(text)
++    if (tvApp !== null) {
++      const outcome = await executeTvAppIntent(tvApp, {
++        callScript: async entityId => {
++          const response = await haFetch(config, '/api/services/script/turn_on', { entity_id: entityId })
++          if (response.status === 202) throw restartingError(response)
++          if (!response.ok) throw new Error('TV application launch was not accepted')
++        },
++        readNative: async () => await currentEntity(config, 'media_player.televizor')
++      })
++      logger.info(`Fast TV application ${tvApp.app}: ${outcome.status}`)
++      return outcome.status === 'confirmed'
++        ? { kind: 'reply', quasarDirectives: earconDirectives('on'), text: null }
++        : { kind: 'reply', quasarDirectives: [], text: `Команда отправлена. Открытие ${tvApp.label} на телевизоре пока не подтверждено.` }
++    }
++
++    // The named fireplace is the fixed Kodi video, regardless of the speaker's room.
++    const fireplace = parseFireplaceIntent(text)
++    if (fireplace !== null) {
++      const outcome = await executeFireplaceIntent(fireplace, {
++        callScript: async entityId => {
++          const response = await haFetch(config, '/api/services/script/turn_on', { entity_id: entityId })
++          if (response.status === 202) throw restartingError(response)
++          if (!response.ok) throw new Error('Projector fireplace launch was not accepted')
++        },
++        readNative: async () => await currentEntity(config, 'media_player.home'),
++        readReadiness: async () => await currentEntity(config, 'sensor.living_room_fireplace')
++      })
++      logger.info(`Fast projector fireplace: ${outcome.status}`)
++      return outcome.status === 'confirmed'
++        ? { kind: 'reply', quasarDirectives: earconDirectives('on'), text: null }
++        : { kind: 'reply', quasarDirectives: [], text: 'Команда отправлена. Воспроизведение камина на проекторе пока не подтверждено.' }
++    }
++

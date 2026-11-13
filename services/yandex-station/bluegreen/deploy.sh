@@ -38,24 +38,13 @@ ensure_state() {
   bg init "$img"
 }
 
-# corpus_check CONTAINER: the intent corpus must pass 100% and cover every corpus line.
+# The same complete corpus/dialog gate runs on the frozen candidate through RunPod.
+# API/handshake health checks and the subsequent flip/rollback flow stay below.
 corpus_check() {
-  local c=$1 out line pass total expected
-  expected=$(wc -l <"$corpus_dir/intents-ru.jsonl")
-  docker exec "$c" mkdir -p /src/backend/corpus
-  docker cp "$corpus_dir/." "$c:/src/backend/corpus/"
-  out=$(docker exec -w /src/backend/corpus "$c" /node_modules/.bin/tsx run_corpus.mts 2>&1) || true
-  line=$(grep -a 'ИТОГ' <<<"$out" || true)
-  [[ $line =~ ([0-9]+)/([0-9]+) ]] || { log "corpus on $c: no result line"; return 1; }
-  pass=${BASH_REMATCH[1]} total=${BASH_REMATCH[2]}
-  log "corpus on $c: $pass/$total (expected $expected)"
-  [[ $pass == "$total" && $total == "$expected" ]] || return 1
-  # Multi-turn dialogs against a mocked HA: confirmations, slot fill, earcon, volume directive.
-  out=$(docker exec -w /src/backend/corpus "$c" /node_modules/.bin/tsx run_dialogs.mts 2>&1) || true
-  line=$(grep -a 'ДИАЛОГИ' <<<"$out" || true)
-  [[ $line =~ ([0-9]+)/([0-9]+) ]] || { log "dialogs on $c: no result line"; return 1; }
-  log "dialogs on $c: ${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
-  [[ ${BASH_REMATCH[1]} == "${BASH_REMATCH[2]}" ]]
+  local c=$1
+  docker exec "$c" mkdir -p /src/backend/corpus || return 1
+  docker cp "$corpus_dir/." "$c:/src/backend/corpus/" || return 1
+  python3 "$here/corpus_runpod.py" --container "$c" --corpus-dir "$corpus_dir"
 }
 
 build_image() {
