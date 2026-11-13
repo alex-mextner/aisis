@@ -1,0 +1,60 @@
+--- a/gen_corpus.py
++++ b/gen_corpus.py
+@@ -240,12 +240,12 @@
+ # неоднозначно или не хватает слота — вопрос с вариантами
+ addx("clarify", "volume_partial", [
+-    ("громкость", None, "Какую громкость поставить, от одного до десяти?"),
+-    ("звук", None, "Какую громкость поставить, от одного до десяти?"),
+-    ("50 процентов", None, "Громкость 50 процентов или яркость 50 процентов?"),
+-    ("70 процентов", None, "Громкость 70 процентов или яркость 70 процентов?"),
++    ("громкость", None, "Какую громкость поставить?"),
++    ("звук", None, "Какую громкость поставить?"),
++    ("50 процентов", None, "Громкость или яркость?"),
++    ("70 процентов", None, "Громкость или яркость?"),
+ ])
+ addx("clarify", "brightness", [
+-    ("яркость", None, "Какую яркость поставить, в процентах?"),
+-    ("яркость света", None, "Какую яркость поставить, в процентах?"),
++    ("яркость", None, "Какую яркость поставить?"),
++    ("яркость света", None, "Какую яркость поставить?"),
+ ])
+ addx("clarify", "setpoint", [
+--- a/intents-ru.jsonl
++++ b/intents-ru.jsonl
+@@ -112,5 +112,5 @@
+ {"text": "включён ли чайник", "expect": {"kind": "query", "domain": "state"}}
+ {"text": "выключи кондиционер в гостиной", "expect": {"kind": "cmd", "domain": "climate"}}
+-{"text": "громкость", "expect": {"kind": "clarify", "domain": "volume_partial", "tier": "clarify", "question": "Какую громкость поставить, от одного до десяти?"}}
++{"text": "громкость", "expect": {"kind": "clarify", "domain": "volume_partial", "tier": "clarify", "question": "Какую громкость поставить?"}}
+ {"text": "громкость на пять", "expect": {"kind": "cmd", "domain": "volume"}}
+ {"text": "поставь музыку", "expect": {"kind": "llm", "domain": "music"}}
+@@ -180,5 +180,5 @@
+ {"text": "свет на кухню", "expect": {"kind": "clarify", "domain": "switch_partial", "tier": "clarify", "question": "Включить или выключить свет на кухне?"}}
+ {"text": "вылючи телевизор", "expect": {"kind": "clarify", "domain": "switch_partial", "tier": "clarify", "question": "Включить или выключить телевизор?"}}
+-{"text": "яркость", "expect": {"kind": "clarify", "domain": "brightness", "tier": "clarify", "question": "Какую яркость поставить, в процентах?"}}
++{"text": "яркость", "expect": {"kind": "clarify", "domain": "brightness", "tier": "clarify", "question": "Какую яркость поставить?"}}
+ {"text": "Спасибо за просмотр", "expect": {"kind": "llm", "domain": "no_enumeration", "tier": "llm"}}
+ {"text": "сделай таймер на 15 минут", "expect": {"kind": "llm", "domain": "timer"}}
+@@ -304,5 +304,5 @@
+ {"text": "температура 22,5", "expect": {"kind": "cmd", "domain": "setpoint", "tier": "execute", "action": "setpoint:22.5"}}
+ {"text": "Субтитры сделал DimaTorzok", "expect": {"kind": "llm", "domain": "no_enumeration", "tier": "llm"}}
+-{"text": "50 процентов", "expect": {"kind": "clarify", "domain": "volume_partial", "tier": "clarify", "question": "Громкость 50 процентов или яркость 50 процентов?"}}
++{"text": "50 процентов", "expect": {"kind": "clarify", "domain": "volume_partial", "tier": "clarify", "question": "Громкость или яркость?"}}
+ {"text": "гормкость три", "expect": {"kind": "cmd", "domain": "volume_partial", "tier": "execute", "action": "volume:3"}}
+ {"text": "24 кондей", "expect": {"kind": "cmd", "domain": "setpoint", "tier": "execute", "action": "setpoint:24"}}
+@@ -318,6 +318,6 @@
+ {"text": "включи свет везде", "expect": {"kind": "cmd", "domain": "light"}}
+ {"text": "сколько шагов в километре", "expect": {"kind": "llm", "domain": "question"}}
+-{"text": "70 процентов", "expect": {"kind": "clarify", "domain": "volume_partial", "tier": "clarify", "question": "Громкость 70 процентов или яркость 70 процентов?"}}
+-{"text": "яркость света", "expect": {"kind": "clarify", "domain": "brightness", "tier": "clarify", "question": "Какую яркость поставить, в процентах?"}}
++{"text": "70 процентов", "expect": {"kind": "clarify", "domain": "volume_partial", "tier": "clarify", "question": "Громкость или яркость?"}}
++{"text": "яркость света", "expect": {"kind": "clarify", "domain": "brightness", "tier": "clarify", "question": "Какую яркость поставить?"}}
+ {"text": "отключи кондиционер", "expect": {"kind": "cmd", "domain": "climate"}}
+ {"text": "включи розетку", "expect": {"kind": "cmd", "domain": "socket"}}
+@@ -384,5 +384,5 @@
+ {"text": "включи гирлянбу", "expect": {"kind": "clarify", "domain": "typo"}}
+ {"text": "какая температура в комнате", "expect": {"kind": "llm", "domain": "weather_time"}}
+-{"text": "звук", "expect": {"kind": "clarify", "domain": "volume_partial", "tier": "clarify", "question": "Какую громкость поставить, от одного до десяти?"}}
++{"text": "звук", "expect": {"kind": "clarify", "domain": "volume_partial", "tier": "clarify", "question": "Какую громкость поставить?"}}
+ {"text": "выкл люстру", "expect": {"kind": "clarify", "domain": "switch_partial", "tier": "confirm", "action": "off:light.liustra", "question": "Выключить люстру?"}}
+ {"text": "включи свет попроще", "expect": {"kind": "cmd", "domain": "light"}}

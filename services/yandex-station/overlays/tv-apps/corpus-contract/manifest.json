@@ -1,0 +1,60 @@
+{
+  "schema": "aisis-corpus-contract-v1",
+  "reason": "Align six stale expected question strings with the unchanged active/candidate intent catalog short-question policy.",
+  "intent_catalog_sha256": "46db1244acea19ec4d70a031d458672cbed623f09eefd6c986942dcb23380641",
+  "decide_fast_intent_sha256": "d7caaeab068e14e4bb190ece093a12e895658f38ade44e6e6ae0343ce20c1f05",
+  "preimage_sha256": {
+    "gen_corpus.py": "614acc518ba85841244ad6b8621fac6ff2a2d12b46499f469bd6e060b3cb1e3f",
+    "intents-ru.jsonl": "71a84577c92c098bf2baff9f072961620f2bb85aa29cc3c9eed26d800010b58c",
+    "run_corpus.mts": "4d30afe7b36e225914eba968641096dfbefdfcc2e718ac37ecc9364050d06eba",
+    "run_dialogs.mts": "5f02421d3f21d18a3158535aab03c404fd2ebc80e85b34d5ce403b89f7e66a1e"
+  },
+  "postimage_sha256": {
+    "gen_corpus.py": "846d950fca37ac0ca1cfbe0d7c8ca03b31b23b68f82447eeb487384db1636a01",
+    "intents-ru.jsonl": "b16e15eacec5c89ce7003ccd9fa48b19bbde63391456eb2ee7f6fbac664f64aa",
+    "run_corpus.mts": "4d30afe7b36e225914eba968641096dfbefdfcc2e718ac37ecc9364050d06eba",
+    "run_dialogs.mts": "5f02421d3f21d18a3158535aab03c404fd2ebc80e85b34d5ce403b89f7e66a1e"
+  },
+  "patch_sha256": "36d60d2df7e44cbc9840726922a701d22ac5ea86c5bde87cd167017111d8805e",
+  "rows": 466,
+  "changed_question_literals": [
+    {
+      "text": "громкость",
+      "before": "Какую громкость поставить, от одного до десяти?",
+      "after": "Какую громкость поставить?"
+    },
+    {
+      "text": "звук",
+      "before": "Какую громкость поставить, от одного до десяти?",
+      "after": "Какую громкость поставить?"
+    },
+    {
+      "text": "яркость",
+      "before": "Какую яркость поставить, в процентах?",
+      "after": "Какую яркость поставить?"
+    },
+    {
+      "text": "яркость света",
+      "before": "Какую яркость поставить, в процентах?",
+      "after": "Какую яркость поставить?"
+    },
+    {
+      "text": "50 процентов",
+      "before": "Громкость 50 процентов или яркость 50 процентов?",
+      "after": "Громкость или яркость?"
+    },
+    {
+      "text": "70 процентов",
+      "before": "Громкость 70 процентов или яркость 70 процентов?",
+      "after": "Громкость или яркость?"
+    }
+  ],
+  "unchanged": [
+    "all non-question fields",
+    "all other corpus rows",
+    "run_corpus.mts",
+    "run_dialogs.mts",
+    "100 percent gate",
+    "application source"
+  ]
+}
