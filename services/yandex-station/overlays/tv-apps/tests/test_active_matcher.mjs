@@ -20,12 +20,17 @@ for(const match of file.matchAll(/import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"]/
 }
  return names;
 }
-async function load(current='on',appId='com.netflix.ninja',responseStatus=200,stale=false){
- const calls=[],state={state:current,attributes:{app_id:appId}};
+async function load(current='on',appId='com.netflix.ninja',responseStatus=200,stale=false,native={}){
+ const calls=[],reads=[],state={state:current,attributes:native.attributes??{app_id:appId}};
  const fetch=async(url,options={})=>{
   const pathname=new URL(url).pathname;
   if(options.method==='POST'){calls.push({path:pathname,body:JSON.parse(options.body)});return new Response('[]',{status:responseStatus})}
-  if(pathname==='/api/states/media_player.televizor')return new Response(JSON.stringify(state),{headers:stale?{'x-aisis-cache':'stale'}:{}});
+  if(pathname==='/api/states/'+(native.entity??'media_player.televizor')){reads.push(native.entity??'media_player.televizor');return new Response(JSON.stringify(state),{headers:stale?{'x-aisis-cache':'stale'}:{}})}
+  if(pathname==='/api/states/sensor.living_room_fireplace'){
+   reads.push('sensor.living_room_fireplace');
+   const proof={state:'playing',attributes:{owned:true,file_matches:true,repeat:native.repeat??'one',observed_at:new Date().toISOString(),...native.proof}};
+   return new Response(JSON.stringify(proof),{headers:native.proofStale?{'x-aisis-cache':'stale'}:{}});
+  }
   if(pathname==='/api/states')return new Response('[]');
   return new Response('');
  };
@@ -58,7 +63,7 @@ async function load(current='on',appId='com.netflix.ninja',responseStatus=200,st
  }
  const entry=new vm.SourceTextModule(transpile(file),{context,identifier:'actual-ha-intents'});
  await entry.link(linker);await entry.evaluate();
- return {calls,match:entry.namespace.matchFastIntent};
+ return {calls,reads,match:entry.namespace.matchFastIntent};
 }
 test('actual matcher routes app before generic device/music recognition, using nonblocking script service',async()=>{
  for(const [phrase,entity,packageId] of [
@@ -79,5 +84,36 @@ test('actual matcher preserves service error and stale/off state boundaries',asy
   assert.equal(api.calls.length,1);
   assert.equal(api.calls[0].path,'/api/services/script/turn_on');
   assert.equal(result.kind,'reply');assert.equal(typeof result.text,'string');assert.ok(result.text.length);
+ }
+});
+
+test('actual matcher targets Kodi for fireplace and never dispatches a TV app script',async()=>{
+ const marker='fireplace-fastily-1080p.webm';
+ for(const phrase of ['открой камин на проекторе','включи камин','запусти на проекторе камин']){
+  const api=await load('playing',undefined,200,false,{entity:'media_player.home',attributes:{media_title:marker}});
+  const result=await api.match(phrase,{origin:'voice'});
+  assert.deepEqual(api.calls,[{path:'/api/services/script/turn_on',body:{entity_id:'script.living_room_fireplace'}}]);
+  assert.ok(api.reads.includes('media_player.home'));assert.ok(api.reads.includes('sensor.living_room_fireplace'));assert.ok(api.reads.every(id=>['media_player.home','sensor.living_room_fireplace'].includes(id)));
+  assert.equal(result.kind,'reply');assert.equal(result.text,null);
+ }
+});
+test('actual fireplace matcher preserves service failure, stale and wrong-video boundaries',async()=>{
+ for(const [status,state,stale,title,repeat='one'] of [[500,'playing',false,'fireplace-fastily-1080p.webm'],[202,'playing',false,'fireplace-fastily-1080p.webm'],[200,'idle',false,'fireplace-fastily-1080p.webm'],[200,'playing',true,'fireplace-fastily-1080p.webm'],[200,'playing',false,'another.webm'],[200,'playing',false,'fireplace-fastily-1080p.webm','off'],[200,'playing',false,'fireplace-fastily-1080p.webm','all']]){
+  const api=await load(state,undefined,status,stale,{entity:'media_player.home',attributes:{media_title:title},repeat});
+  const result=await api.match('открой камин на проекторе');
+  assert.equal(api.calls.length,1);assert.equal(api.calls[0].path,'/api/services/script/turn_on');
+  assert.equal(api.calls[0].body.entity_id,'script.living_room_fireplace');
+  assert.equal(result.kind,'reply');assert.equal(typeof result.text,'string');assert.ok(result.text.length);
+ }
+});
+
+test('actual fireplace matcher rejects stale or foreign readiness even with the right playing title',async()=>{
+ for(const native of [
+  {proof:{owned:false}},{proof:{file_matches:false}},
+  {proof:{observed_at:'2000-01-01T00:00:00Z'}},{proofStale:true}
+ ]){
+  const api=await load('playing',undefined,200,false,{entity:'media_player.home',attributes:{media_title:'fireplace-fastily-1080p.webm'},...native});
+  const result=await api.match('включи камин на проекторе');
+  assert.equal(api.calls.length,1);assert.equal(result.kind,'reply');assert.equal(typeof result.text,'string');assert.ok(result.text.length);
  }
 });
