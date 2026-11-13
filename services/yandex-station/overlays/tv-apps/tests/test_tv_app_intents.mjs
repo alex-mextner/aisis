@@ -74,3 +74,49 @@ test('uncertain service failure never retries launch or speaks success',async()=
  }),/HTTP timeout/);
  assert.equal(calls,1);assert.equal(reads,0);
 });
+
+async function flushMicrotasks(){for(let i=0;i<12;i++)await Promise.resolve()}
+for(const slowSuccess of [true,false])test('observation deadline bounds '+(slowSuccess?'slow success':'a never-resolving read'),async(t)=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:2000000000000});
+ const cleared=t.mock.method(globalThis,'clearTimeout');
+ const intent=parser('открой Netflix');
+ let calls=0,reads=0,outcome,release;
+  const field=new Promise(resolve=>{release=resolve});
+  if(slowSuccess)setTimeout(()=>release({state:'on',attributes:{app_id:intent.packageId}}),4500);
+  const task=api.executeTvAppIntent(intent,{
+   callScript:async()=>{calls++},readNative:async()=>{reads++;return await field}
+  }).then(result=>{outcome=result});
+  await flushMicrotasks();
+  assert.equal(calls,1);assert.equal(reads,1);
+  t.mock.timers.tick(3999);await flushMicrotasks();assert.equal(outcome,undefined);
+  t.mock.timers.tick(1);await flushMicrotasks();
+  try{assert.deepEqual(outcome,{status:'pending'},slowSuccess?'late success must not exceed the budget':'hung read must not exceed the budget')}
+  finally{release({state:'on',attributes:{app_id:intent.packageId}});await flushMicrotasks()}
+  await task;
+  assert.equal(calls,1);assert.equal(reads,1);assert.equal(outcome.status,'pending');
+  t.mock.timers.tick(1000);await flushMicrotasks();
+ assert.ok(cleared.mock.callCount()>=1,'deadline timers must be cleared after each observation');
+});
+test('script acknowledgement time consumes the same bounded reply budget and fast success clears its timer',async(t)=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:2000000000000});
+ const cleared=t.mock.method(globalThis,'clearTimeout');
+ const intent=parser('открой YouTube');
+ let calls=0,outcome,release;
+ const read=new Promise(resolve=>{release=resolve});
+ const task=api.executeTvAppIntent(intent,{
+  callScript:async()=>{calls++;await new Promise(resolve=>setTimeout(resolve,3000))},
+  readNative:async()=>await read
+ }).then(result=>{outcome=result});
+ await flushMicrotasks();
+ t.mock.timers.tick(3000);await flushMicrotasks();
+ t.mock.timers.tick(999);await flushMicrotasks();assert.equal(outcome,undefined);
+ t.mock.timers.tick(1);await flushMicrotasks();
+ try{assert.deepEqual(outcome,{status:'pending'},'an accepted script cannot restart the observation budget')}
+ finally{release({state:'on',attributes:{app_id:intent.packageId}});await flushMicrotasks()}
+ await task;assert.equal(calls,1);
+ const before=cleared.mock.callCount();
+ assert.deepEqual(await api.executeTvAppIntent(intent,{
+  callScript:async()=>{},readNative:async()=>({state:'on',attributes:{app_id:intent.packageId}})
+ }),{status:'confirmed'});
+ assert.ok(cleared.mock.callCount()>before,'fast success must clear its outstanding timeout');
+});

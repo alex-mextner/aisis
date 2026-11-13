@@ -4,7 +4,7 @@ This overlay adds explicit Netflix and YouTube commands to the existing fast int
 
 Accepted commands use «открой», «включи» or «запусти» with Netflix/Нетфликс or YouTube/Ютуб/Ютюб/Ютьюб, optionally «на телевизоре»/«на ТВ»/«на телеке»/«на телике» and «пожалуйста». Complete-phrase matching rejects questions, negations, music requests, off/pause/volume commands and compound requests.
 
-The layer invokes exactly one `script.turn_on` call for `script.living_room_netflix` or `script.living_room_youtube`. Those HA scripts own power synchronization and launch. AISIS observes `media_player.televizor` afterward. An active state plus the expected `app_id` confirms success; old activity retained while off, stale HA cache, unavailable data or another app do not. Observation is bounded; an accepted launch that is still pending gets an explicit unconfirmed reply. An uncertain request is never retried.
+The layer invokes exactly one `script.turn_on` call for `script.living_room_netflix` or `script.living_room_youtube`. Those HA scripts own power synchronization and launch. AISIS observes `media_player.televizor` afterward. An active state plus the expected `app_id` confirms success; old activity retained while off, stale HA cache, unavailable data or another app do not. The single request and subsequent observation share a four-second reply budget; the existing three-second HTTP request timeout is preserved. Every observation races the remaining budget and clears its timer, so late success or an unresolved read stays pending. An accepted launch that is still pending gets an explicit unconfirmed reply. An uncertain request is never retried.
 
 ## Projector fireplace
 

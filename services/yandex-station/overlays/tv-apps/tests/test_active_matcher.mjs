@@ -35,7 +35,7 @@ async function load(current='on',appId='com.netflix.ninja',responseStatus=200,st
   return new Response('');
  };
  const context=vm.createContext({console,fetch,Response,AbortSignal,URL,Map,Set,Date,JSON,Number,String,Promise,
-  setTimeout:fn=>{queueMicrotask(fn);return 1},clearTimeout:()=>{},
+  setTimeout:(fn,ms)=>{if(ms>=1000)return setTimeout(fn,ms);queueMicrotask(fn);return 0},clearTimeout:timer=>clearTimeout(timer),
   process:{env:{AISIS_HA_URL:'http://ha.test',AISIS_HA_TOKEN:'test-only-token',AISIS_FAST_EARCON:'off'}}});
  const generic={
   allowCorrection:()=>false,confirmationQuestion:()=>'',describeCorrection:()=>'',eligible:()=>false,endsMidPhrase:()=>false,noteAsked:()=>{},requestCorrection:async()=>null,shadowOnly:()=>true,

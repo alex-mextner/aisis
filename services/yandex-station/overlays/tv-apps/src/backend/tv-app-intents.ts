@@ -75,23 +75,36 @@ export function parseFireplaceIntent (input: unknown): FireplaceIntent | null {
   return match ? { ...FIREPLACE } : null
 }
 
-/** One accepted launch, followed by bounded observation. Uncertainty never causes a retry. */
+async function readWithinBudget (actions: AppActions, remaining: number): Promise<NativePlayer | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      actions.readNative(),
+      new Promise<undefined>(resolve => { timer = setTimeout(() => resolve(undefined), remaining) })
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
+/** One launch and an absolute reply budget. Uncertainty never causes a retry. */
 async function executeObserved (
   scriptEntity: string, actions: AppActions, observed: (native: NativePlayer) => boolean
 ): Promise<{ status: 'confirmed' | 'pending' }> {
+  const deadline = Date.now() + 4000
   await actions.callScript(scriptEntity)
   const sleep = actions.sleep ?? (async milliseconds => await new Promise(resolve => setTimeout(resolve, milliseconds)))
-  const deadline = Date.now() + 4000
   for (let attempt = 0; attempt < 12 && Date.now() < deadline; attempt++) {
     let native: NativePlayer | undefined
     try {
-      native = await actions.readNative()
+      native = await readWithinBudget(actions, deadline - Date.now())
     } catch {
       // The service was accepted; a failed observation does not prove a failed launch.
       return { status: 'pending' }
     }
+    if (Date.now() >= deadline) return { status: 'pending' }
     if (native !== undefined && observed(native)) return { status: 'confirmed' }
-    if (attempt < 11 && Date.now() < deadline) await sleep(250)
+    if (attempt < 11) await sleep(Math.min(250, Math.max(0, deadline - Date.now())))
   }
   return { status: 'pending' }
 }
