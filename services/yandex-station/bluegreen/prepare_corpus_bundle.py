@@ -75,7 +75,7 @@ def prepare_corpus_bundle(container: str, corpus_dir: Path, output_dir: Path,
         "AISIS_HA_AMBIGUITY_FILE": "/tmp/aisis-corpus-ambiguity.json",
         "AISIS_ADAPTER_ASR_URL": "http://127.0.0.1:9/asr",
         "AISIS_SETTINGS_URL": "http://127.0.0.1:9/settings",
-        "AISIS_ADAPTER_MUSIC_URL": "http://127.0.0.1:9/music",
+        "AISIS_ADAPTER_MUSIC_URL": "http://127.0.0.1:9/music/play",
         "AISIS_ADAPTER_LAYA_URL": "http://127.0.0.1:9/laya",
     }
     names = sorted(set(before["file_sha256"]) | set(before["symlinks"]))
