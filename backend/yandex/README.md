@@ -49,6 +49,52 @@ The adapter emits failure classes and Fish HTTP status without user text or
 credentials. Upstream Quasar logs can contain transcripts; restrict access and
 retention of its Docker logs.
 
+## Claude API primary, ChatGPT web last
+
+`claude_primary.py` is an alternative `AISIS_CHATGPT_COMMAND` (same one-JSON-line
+contract, no adapter change). It asks `claude-sonnet-5-5` (thinking `between_tools`,
+effort `medium`, no tools declared) through the Anthropic Messages API, trying up to three
+existing credentials in the order of `claude-sources.json` (`claude-sources.example.json`:
+finance, calendar, report). Each entry names a private `.env` file and the variable to read;
+values are never copied into configuration, logs or this repository. Accepted keys are
+`sk-ant-api...` and the Console `sk-ant-usr-...` shape; OAuth `sk-ant-oat` tokens, other
+providers' keys and shell expressions are ignored. Source files must be regular, owned by the
+current user and not group/world accessible; a missing file is skipped, but an existing file
+with a looser mode fails every turn (`credential_source_not_private`, no ChatGPT reserve) until
+it is fixed. Duplicate values count once.
+
+A 401/402/403/408/429/5xx/timeout response puts that key in a persistent cooldown (the full
+finite `Retry-After` interval from the provider, never shortened; missing or malformed values use
+a safe default) and moves to the next key. Any other 4xx rejection (model access, workspace or
+organization state, which belong to the key) is treated the same way with a 300 s default
+cooldown, and a disabled organization or exhausted credit with 3600 s; only a redirect-like
+status or an unusable answer shape fails the turn. An answer cut off at `max_tokens` is spoken as far as it
+goes; an empty one fails the turn. Only when all keys fail or cool down is the existing
+`chatgpt_pm.py` (kept beside the
+script in the release directory) called, exactly once, with its Guardian and conversation
+ownership checks unchanged. A successful Claude answer never calls it. A turn id is
+recorded before the first request and is never resent, even after an uncertain outcome.
+
+The API path is stateless by default (`AISIS_CLAUDE_HISTORY_PAIRS=0`): each request carries
+only the current utterance and no transcript is stored. Per turn it records only the turn id,
+station, status, provider and an unsalted SHA-256 of the utterance (the existing PM ledger
+does the same), plus key-hash cooldowns.
+`1..16` opts into bounded private per-speaker context; returning to `0` deletes all retained
+context, for every speaker, on the next request. When that context is handed to the ChatGPT
+reserve it is flattened to one line and trimmed (oldest pairs first) to the PM character and
+128 KiB request limits. Budgets are ordered
+`3 x AISIS_CLAUDE_TIMEOUT + AISIS_PM_HTTP_TIMEOUT + 5 <= AISIS_ROUTER_TIMEOUT <
+AISIS_CHATGPT_TIMEOUT` (20/240/310/320; set all four in the overlay: the adapter's own
+`AISIS_CHATGPT_TIMEOUT` default is 250). `claude_primary.py --check-config` makes no
+network call; `--probe-keys` sends one paid request per key and never starts the fallback.
+`install-claude-primary.sh [RELEASE_ID]` stages the immutable release directory
+(`releases/claude-primary-<id>/`: `claude_primary.py`, the unchanged `chatgpt_pm.py`, examples and a
+`MANIFEST` of hashes) and refuses if the installed `chatgpt_pm.py` differs; it changes no service or
+configuration. Activate with `claude-primary.env.example` (set the printed release path) and
+`claude-primary.conf.example`, then `systemctl --user daemon-reload` and restart only the adapter.
+Roll back by removing the drop-in, running `systemctl --user daemon-reload` (without it systemd keeps
+loading the old drop-in) and restarting only the adapter.
+
 ## Rollback
 
 Stop the core user services and this Compose project when rolling back the core
@@ -256,3 +302,30 @@ The actual-encoder/decoder regressions construct valid Ogg pages with CRC,
 exercise packet/page boundaries and signed gain, and run alongside native EOF
 regressions. See [Ogg framing](https://xiph.org/ogg/doc/framing.html) and
 [Ogg Opus RFC7845](https://www.rfc-editor.org/rfc/rfc7845).
+
+### Stable Claude prefixes and request usage
+
+The router accepts an optional `persona` string from the trusted local adapter. Its system instructions and the real persona form the stable system prefix, with one explicit five-minute cache boundary. Dialog history, retrieved memories, current time and the user's question remain after that boundary. The guarded web reserve still receives the persona within its existing input limits. The adapter can detect `SUPPORTS_CACHE_TELEMETRY` before using the new field, so the router can be installed first.
+
+Caching is subject to the provider's token minimum: currently 512 tokens for Sonnet 5.5 and 4,096 for Haiku 4.5. Short instructions, including some ASR catalogs or fact-extraction prompts, may remain ineligible. The implementation never pads prompts or changes models to qualify. Five minutes is the default; an hour would incur a higher cache-write price and should be chosen only after measured reuse supports it. See [Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).
+
+Every native HTTP attempt queues one row to `$AISIS_CLAUDE_STATE_DIR/usage.sqlite3`, or `AISIS_CLAUDE_USAGE_DB` when explicitly set. The `provider_requests` table records:
+
+- Attempt ID, UTC Unix start time, duration, purpose (`brain`, `asr`, `facts`, `probe`) and optional turn ID.
+- Credential slot and one-way credential fingerprint, requested/returned model, provider organization ID and request/response IDs when present.
+- HTTP status and a fixed outcome code, including failed, cancelled and timed-out attempts.
+- Separate raw input, output, cache-read, cache-write, five-minute write and one-hour write counters.
+
+Missing or malformed counters remain SQL `NULL`. A timeout can have unknown provider consumption; it is never reported as zero. Count non-null samples alongside each token sum when reporting coverage. The transport records once; the router and adapter do not add a second usage row for that response. The adapter may copy the safe counters into its turn trace for correlation.
+
+The ledger contains no prompts, answers, credentials or full headers. Its file is private (0600), WAL permits concurrent readers, and writes run off the request deadline with a one-second lock budget. This absorbs short competing writes without consuming the voice attempt deadline. Orderly shutdown drains pending writes; SIGTERM follows the cancellation path, while a crash or SIGKILL can leave incomplete coverage. Persistence failures only emit a fixed warning: they do not discard a successful voice answer. The CLI emits a private per-invocation `/tmp/aisis-claude-*.log` path on stderr while preserving the JSON-only stdout contract. The private log retains fixed error/warning codes and the actual exit status, including argparse and interrupts. Its parent PID identifies the caller; subprocess fixtures remove only logs from their own invocations. These small invocation logs follow the host’s existing temporary-file retention policy; the router does not remove another process’s logs.
+
+For installations using the current AISIS state layout, the immutable installer accepts an explicit root:
+
+```sh
+backend/yandex/install-claude-primary.sh claude-primary-<reviewed-sha> "$HOME/.local/share/aisis" /absolute/path/to/current/release/chatgpt_pm.py
+```
+
+An explicit install root requires the current fallback-client file for a byte-for-byte compatibility check. This stages the release only. After review and CI, compare the running adapter source and fallback-client hash, pin only the reviewed router path through the existing environment-file mechanism, and deploy the adapter/ASR integration from its own reviewed current-main change. Recheck concurrent release changes before activation. Keep the previous pin for rollback and verify the live ledger with ordinary voice traffic; configuration checks make no paid inference calls.
+
+The explicit key probe uses the same native system-block/cache-control shape as normal traffic. Its real short instructions may remain below the cache minimum: the probe checks request compatibility and never pads a prompt. The five-minute TTL is an explicit documented provider value. A reserve payload rejected before transport is recorded as failed, not uncertain, because no fallback request was sent.

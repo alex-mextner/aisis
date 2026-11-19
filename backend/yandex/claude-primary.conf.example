@@ -1,0 +1,3 @@
+# ~/.config/systemd/user/aisis-yandex-adapter.service.d/claude-primary.conf
+[Service]
+EnvironmentFile=%h/.config/aisis-yandex/claude-primary.env
